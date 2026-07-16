@@ -14,11 +14,26 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import Offer, PriceHistory, Shop
-from app.parsers.base import ShopParser
+from app.parsers.base import ParsedOffer, ShopParser
 
 # Порог предохранителя: если распарсено меньше этой доли от прежнего числа
 # активных офферов — считаем прогон сломанным и не деактивируем офферы.
 SAFETY_RATIO = 0.5
+
+# Лимиты строковых колонок офферов (см. models/catalog.py)
+_MAX_TITLE = 512
+_MAX_CATEGORY = 512
+_MAX_URL = 1024
+
+
+def _clamp_lengths(parsed: ParsedOffer) -> None:
+    """Обрезает строковые поля до лимитов колонок БД (защитно, для всех магазинов)."""
+    parsed.title = parsed.title[:_MAX_TITLE]
+    parsed.url = parsed.url[:_MAX_URL]
+    if parsed.raw_category is not None:
+        parsed.raw_category = parsed.raw_category[:_MAX_CATEGORY]
+    if parsed.image_url is not None:
+        parsed.image_url = parsed.image_url[:_MAX_URL]
 
 
 @dataclass(slots=True)
@@ -79,6 +94,7 @@ async def ingest_shop(
             partial = True
             break
         report.total_parsed += 1
+        _clamp_lengths(parsed)  # защита от переполнения строковых колонок
         offer = existing.get(parsed.external_id)
         if offer is None:
             offer = Offer(
