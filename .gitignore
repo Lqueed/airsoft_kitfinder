@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / фронтенд
+node_modules/
+frontend/dist/
+
+# Окружение и секреты
+.env
+.env.*
+!.env.example
+
+# Claude Code (локальные настройки — per-user)
+.claude/settings.local.json
+
+# IDE / ОС
+.idea/
+.vscode/
+.DS_Store
