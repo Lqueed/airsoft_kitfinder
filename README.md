@@ -8,6 +8,7 @@
 - [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) — требования
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — архитектура (модель данных, парсеры, API)
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — этапы MVP и статусы
+- [`docs/SHOPS.md`](docs/SHOPS.md) — реестр магазинов для парсинга и их статус
 
 ## Стек
 
