@@ -10,9 +10,10 @@ from sqlalchemy import select
 
 from app.auth import hash_password
 from app.db import SessionLocal
-from app.models.catalog import Category
+from app.models.catalog import Category, Shop
 from app.parsers.registry import PARSERS, get_parser
 from app.services.ingest import ingest_shop
+from app.services.matching import match_unmatched
 
 # Базовая таксономия категорий товаров (slug → отображаемое имя)
 BASE_CATEGORIES: list[tuple[str, str]] = [
@@ -72,6 +73,23 @@ async def parse_shops(codes: list[str], limit: int | None = None) -> None:
         )
 
 
+async def rematch(shop_code: str | None = None) -> None:
+    """Матчит офферы без товара в канонические products."""
+    async with SessionLocal() as session:
+        shop_id: int | None = None
+        if shop_code:
+            shop_id = await session.scalar(select(Shop.id).where(Shop.code == shop_code))
+            if shop_id is None:
+                print(f"Магазин '{shop_code}' не найден")
+                return
+        report = await match_unmatched(session, shop_id=shop_id)
+    print(
+        f"Матчинг: обработано={report.processed} "
+        f"новых товаров={report.created_products} "
+        f"привязано к существующим={report.linked_existing}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli", description="Служебные команды kitfinder")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -96,6 +114,11 @@ def main() -> None:
         help="Ограничить число офферов (smoke-прогон; деактивация пропускается).",
     )
 
+    rematch_parser = sub.add_parser("rematch", help="Сматчить офферы без товара в products")
+    rematch_parser.add_argument(
+        "--shop", default=None, help="Код магазина (по умолчанию — все несматченные)."
+    )
+
     args = parser.parse_args()
 
     if args.command == "seed":
@@ -104,6 +127,8 @@ def main() -> None:
         gen_password_hash(args.password)
     elif args.command == "parse":
         asyncio.run(parse_shops(args.shops, args.limit))
+    elif args.command == "rematch":
+        asyncio.run(rematch(args.shop))
 
 
 if __name__ == "__main__":
