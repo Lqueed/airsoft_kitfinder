@@ -26,12 +26,21 @@ docker compose up -d db
 cd backend
 cp .env.example .env        # заполнить при необходимости
 uv sync
+uv run alembic upgrade head            # создать схему БД
+uv run python -m app.cli seed          # заполнить справочник категорий
 uv run uvicorn app.main:app --reload   # http://localhost:8000/api/docs
 
 # 3. Фронтенд (из frontend/, в отдельном терминале)
 cd frontend
 npm install
 npm run dev                 # http://localhost:5173 (проксирует /api на :8000)
+```
+
+## Полезные команды
+
+```bash
+# Сгенерировать bcrypt-хеш пароля админа для ADMIN_PASSWORD_HASH в .env
+uv run python -m app.cli hash-password "твой-пароль"
 ```
 
 ## Проверки
