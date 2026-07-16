@@ -21,6 +21,7 @@ frontend/dist/
 
 # Claude Code (локальные настройки — per-user)
 .claude/settings.local.json
+.claude/settings.json
 
 # IDE / ОС
 .idea/
