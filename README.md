@@ -27,8 +27,11 @@
 - список и редактор китов (позиции fixed/flexible, курация вариантов, публикация);
 - каталог магазинов: поиск по сырым офферам и ручная привязка к товарам.
 
-Данные наполняются парсерами трёх магазинов (`app.cli parse`) и матчингом
-(`app.cli rematch`). Осталось по роадмапу: **M7 — продакшенизация** (деплой, cron, бэкапы).
+Данные наполняются парсерами шести магазинов (`app.cli parse`) и матчингом
+(`app.cli rematch`): strikeplanet, zorg, mangoost, airgun, pnevmat24 (static) и
+airsoftstore (через Playwright, JS-челлендж); см. [`docs/SHOPS.md`](docs/SHOPS.md).
+Остаётся по роадмапу: airsoft-rus (Cloudflare, отложен) и **продакшенизация**
+(деплой, cron, бэкапы).
 
 ## Быстрый старт (dev)
 
@@ -42,6 +45,7 @@ docker compose up -d db
 cd backend
 cp .env.example .env        # заполнить при необходимости
 uv sync
+uv run playwright install chromium     # браузер для парсера airsoftstore (JS-челлендж)
 uv run alembic upgrade head            # создать схему БД
 uv run python -m app.cli seed          # заполнить справочник категорий
 uv run uvicorn app.main:app --reload   # http://localhost:8000/api/docs

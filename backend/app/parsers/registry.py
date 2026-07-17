@@ -1,7 +1,10 @@
 """Явный реестр парсеров магазинов. Добавить магазин = импорт + строка здесь."""
 
 from app.parsers.base import ShopParser
+from app.parsers.shops.airgun import AirgunParser
+from app.parsers.shops.airsoftstore import AirsoftstoreParser
 from app.parsers.shops.mangoost import MangoostParser
+from app.parsers.shops.pnevmat24 import Pnevmat24Parser
 from app.parsers.shops.strikeplanet import StrikeplanetParser
 from app.parsers.shops.zorg import ZorgParser
 
@@ -9,6 +12,9 @@ PARSERS: dict[str, type[ShopParser]] = {
     StrikeplanetParser.code: StrikeplanetParser,
     ZorgParser.code: ZorgParser,
     MangoostParser.code: MangoostParser,
+    AirgunParser.code: AirgunParser,
+    Pnevmat24Parser.code: Pnevmat24Parser,
+    AirsoftstoreParser.code: AirsoftstoreParser,
 }
 
 
