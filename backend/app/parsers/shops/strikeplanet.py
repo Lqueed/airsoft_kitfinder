@@ -2,13 +2,19 @@
 
 Товары отрендерены в HTML server-side — используем httpx + selectolax, без браузера.
 `parse_listing` — чистая функция извлечения (тестируется на фикстуре);
-`iter_offers` — обход дерева каталога с пагинацией и rate-limit.
+`parse_categories` — чистая функция сбора реальных разделов каталога из мега-меню;
+`iter_offers` — обходит фиксированный список категорий из меню с пагинацией.
+
+Категории берём ТОЛЬКО из мега-меню `.catalog-menu` (полное дерево разделов
+целиком отрендерено на каждой странице). Раньше был BFS по всем `/catalog/*/`
+ссылкам, но он затягивал фасеточные фильтры (`/filter/.../apply/`, `?arrFilter…`)
+и раздувал обход на тысячи страниц — отсюда «зависания».
 """
 
 import asyncio
 from collections.abc import AsyncIterator
 from typing import ClassVar
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import httpx
 from selectolax.parser import HTMLParser
@@ -21,6 +27,32 @@ _LINK = ".products-card__link"
 _TITLE = ".products-card__title"
 _PRICE = ".price"
 _IN_STOCK = ".cart--add"  # кнопка «в корзину» присутствует у товара в наличии
+
+# Мега-меню каталога: топ-разделы (родители агрегируют товары всех потомков,
+# поэтому обходим только верхний уровень — как на zorg)
+_MENU_TOP = ".catalog-menu__item > a.catalog-menu__link"
+
+
+def parse_categories(html: str, base_url: str) -> list[str]:
+    """URL топ-разделов каталога из мега-меню (без фильтров/query, дедуп).
+
+    Меню продублировано в DOM (desktop) — дедупим. Фасеточные фильтры
+    (`/filter/`, query-параметры) отсекаем: они не разделы, а срезы товаров.
+    Берём только верхний уровень: раздел показывает товары всех подкатегорий
+    (проверено), так что 18 топ-разделов покрывают весь каталог.
+    """
+    tree = HTMLParser(html)
+    result: list[str] = []
+    seen: set[str] = set()
+    for anchor in tree.css(_MENU_TOP):
+        href = anchor.attributes.get("href") or ""
+        if not href.startswith("/catalog/") or "/filter/" in href or "?" in href:
+            continue
+        full = urljoin(base_url, href)
+        if full not in seen:
+            seen.add(full)
+            result.append(full)
+    return result
 
 
 def parse_listing(html: str, base_url: str) -> list[ParsedOffer]:
@@ -78,62 +110,38 @@ class StrikeplanetParser(ShopParser):
         "AppleWebKit/537.36 (KHTML, like Gecko) airsoft_kitfinder-bot"
     )
     request_delay: ClassVar[float] = 0.7  # пауза между запросами, сек
-    max_pages_per_category: ClassVar[int] = 50  # предохранитель от бесконечной пагинации
+    max_pages_per_category: ClassVar[int] = 100  # предохранитель пагинации (крупные разделы)
 
     async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
-        """Обходит дерево каталога и отдаёт все предложения (с дедупом по URL)."""
+        """Собирает разделы из мега-меню и обходит их с пагинацией (дедуп по id)."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
-        visited: set[str] = {self.catalog_root}
-        frontier: list[str] = [self.catalog_root]
-
         async with httpx.AsyncClient(
             headers=headers, timeout=20.0, follow_redirects=True
         ) as client:
-            while frontier:
-                category_url = frontier.pop()
-                async for offer in self._iter_category(client, category_url, visited, frontier):
+            root_html = await self._fetch(client, self.catalog_root)
+            if root_html is None:
+                return
+            for category_url in parse_categories(root_html, self.base_url):
+                async for offer in self._iter_category(client, category_url):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
 
     async def _iter_category(
-        self,
-        client: httpx.AsyncClient,
-        category_url: str,
-        visited: set[str],
-        frontier: list[str],
+        self, client: httpx.AsyncClient, category_url: str
     ) -> AsyncIterator[ParsedOffer]:
-        """Парсит все страницы одной категории и пополняет frontier подкатегориями."""
+        """Парсит все страницы одной категории с пагинацией `?PAGEN_1=`."""
         for page in range(1, self.max_pages_per_category + 1):
             url = category_url if page == 1 else f"{category_url}?PAGEN_1={page}"
             html = await self._fetch(client, url)
             if html is None:
                 break
-            if page == 1:
-                self._enqueue_subcategories(html, visited, frontier)
             offers = parse_listing(html, self.base_url)
             if not offers:
                 break  # страниц с товарами больше нет
             for offer in offers:
                 yield offer
-
-    def _enqueue_subcategories(
-        self, html: str, visited: set[str], frontier: list[str]
-    ) -> None:
-        """Добавляет ссылки подкатегорий в очередь обхода (без карточек товаров)."""
-        tree = HTMLParser(html)
-        card_hrefs = {n.attributes.get("href") for n in tree.css(_LINK)}
-        for anchor in tree.css("a"):
-            href = anchor.attributes.get("href")
-            if not href or href in card_hrefs:
-                continue
-            if not href.startswith("/catalog/") or not href.endswith("/"):
-                continue
-            full = urljoin(self.base_url, href)
-            if urlparse(full).netloc == urlparse(self.base_url).netloc and full not in visited:
-                visited.add(full)
-                frontier.append(full)
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> str | None:
         """GET с rate-limit и мягкой обработкой ошибок (None при неуспехе)."""

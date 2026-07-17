@@ -1,8 +1,14 @@
-"""Парсер магазина zorg.pro (1C-Bitrix, статичный рендер каталога).
+"""Парсер магазина zorg.pro (1C-Bitrix, шаблон Aspro; статичный рендер каталога).
 
-Каталог плоский: категории — `/catalog/<slug>/`, товары — `/catalog/<cat>/<product>/`.
+Категории — `/catalog/<slug>/`, товары — `/catalog/<cat>/<product>/`.
 `parse_listing` — чистая функция извлечения (тестируется на фикстуре);
-`iter_offers` — собирает список категорий и обходит их с пагинацией.
+`parse_categories` — чистая функция сбора топ-разделов каталога из меню;
+`iter_offers` — обходит топ-разделы с пагинацией.
+
+Каталог — дерево из ~541 категории (3 уровня), но родительские разделы Aspro
+агрегируют товары всех потомков, поэтому достаточно обойти 19 ТОП-разделов из
+меню — это покрывает весь каталог. Раньше собирались все 541 `/catalog/*/`
+ссылки, и обход раздувался на тысячи страниц (отсюда «зависания»).
 """
 
 import asyncio
@@ -27,6 +33,28 @@ _IMAGE = "img.lazy"
 
 # Ссылки категорий верхнего уровня: /catalog/<slug>/ (один сегмент)
 _CATEGORY_RE = re.compile(r"^/catalog/[^/]+/$")
+# Меню каталога: топ-разделы = верхний уровень выпадающего меню (Aspro)
+_MENU_TOP = "ul.top > li > ul.dropdown > li > a"
+
+
+def parse_categories(html: str, base_url: str) -> list[str]:
+    """URL топ-разделов каталога из меню (один сегмент пути, дедуп, порядок).
+
+    Берём только верхний уровень меню: родительские разделы агрегируют товары
+    потомков, так что 19 топ-разделов покрывают весь каталог без обхода сотен
+    подкатегорий и фасеточных срезов.
+    """
+    tree = HTMLParser(html)
+    result: list[str] = []
+    seen: set[str] = set()
+    for anchor in tree.css(_MENU_TOP):
+        href = anchor.attributes.get("href") or ""
+        if _CATEGORY_RE.match(href):
+            full = urljoin(base_url, href)
+            if full not in seen:
+                seen.add(full)
+                result.append(full)
+    return result
 
 
 def _card_price(card: object) -> str | None:
@@ -102,10 +130,10 @@ class ZorgParser(ShopParser):
         "AppleWebKit/537.36 (KHTML, like Gecko) airsoft_kitfinder-bot"
     )
     request_delay: ClassVar[float] = 0.7
-    max_pages_per_category: ClassVar[int] = 50
+    max_pages_per_category: ClassVar[int] = 100  # предохранитель пагинации (крупные разделы)
 
     async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
-        """Собирает категории с индекса каталога и обходит их с пагинацией."""
+        """Собирает топ-разделы из меню каталога и обходит их с пагинацией."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
         async with httpx.AsyncClient(
@@ -114,25 +142,11 @@ class ZorgParser(ShopParser):
             root_html = await self._fetch(client, self.catalog_root)
             if root_html is None:
                 return
-            for category_url in self._category_urls(root_html):
+            for category_url in parse_categories(root_html, self.base_url):
                 async for offer in self._iter_category(client, category_url):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
-
-    def _category_urls(self, html: str) -> list[str]:
-        """Ссылки категорий верхнего уровня с индекса каталога (дедуп, порядок сохранён)."""
-        tree = HTMLParser(html)
-        result: list[str] = []
-        seen: set[str] = set()
-        for anchor in tree.css('a[href^="/catalog/"]'):
-            href = anchor.attributes.get("href") or ""
-            if _CATEGORY_RE.match(href):
-                full = urljoin(self.base_url, href)
-                if full not in seen:
-                    seen.add(full)
-                    result.append(full)
-        return result
 
     async def _iter_category(
         self, client: httpx.AsyncClient, category_url: str
