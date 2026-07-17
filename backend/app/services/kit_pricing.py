@@ -23,6 +23,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.catalog import KitItem, KitItemCandidate, Offer, Product
 from app.models.enums import KitItemType
@@ -63,6 +64,25 @@ async def product_min_price(session: AsyncSession, product_id: int) -> Decimal |
             Offer.in_stock.is_(True),
             Offer.price.is_not(None),
         )
+    )
+
+
+async def product_offers(session: AsyncSession, product_id: int) -> list[Offer]:
+    """Активные офферы товара в наличии с ценой, от дешёвого к дорогому (с магазином)."""
+    return list(
+        (
+            await session.scalars(
+                select(Offer)
+                .where(
+                    Offer.product_id == product_id,
+                    Offer.is_active.is_(True),
+                    Offer.in_stock.is_(True),
+                    Offer.price.is_not(None),
+                )
+                .order_by(Offer.price)
+                .options(selectinload(Offer.shop))
+            )
+        ).all()
     )
 
 

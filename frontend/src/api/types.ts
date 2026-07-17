@@ -129,3 +129,73 @@ export interface FlexiblePreview {
   item_id: number
   variants: FlexibleVariant[]
 }
+
+// --- Публичная витрина -----------------------------------------------------
+
+export interface KitCard {
+  id: number
+  slug: string
+  name: string
+  role?: string | null
+  drive_type?: string | null
+  experience_level?: string | null
+  image_url?: string | null
+  price_min?: Money | null
+  price_max?: Money | null
+  complete: boolean
+}
+
+export interface KitCatalog {
+  items: KitCard[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ProductBrief {
+  id: number
+  name: string
+  brand?: string | null
+  image_url?: string | null
+}
+
+export interface OfferView {
+  shop: ShopMeta
+  price?: Money | null
+  in_stock: boolean
+  url: string
+}
+
+export interface VariantView {
+  product: ProductBrief
+  min_price?: Money | null
+  offers: OfferView[]
+}
+
+export interface KitDetailItem {
+  id: number
+  title: string
+  item_type: KitItemType
+  is_required: boolean
+  sort_order: number
+  min_price?: Money | null
+  max_price?: Money | null
+  product?: ProductBrief | null
+  offers: OfferView[]
+  variants: VariantView[]
+}
+
+export interface KitDetail {
+  id: number
+  slug: string
+  name: string
+  description?: string | null
+  role?: string | null
+  drive_type?: string | null
+  experience_level?: string | null
+  image_url?: string | null
+  price_min?: Money | null
+  price_max?: Money | null
+  complete: boolean
+  items: KitDetailItem[]
+}

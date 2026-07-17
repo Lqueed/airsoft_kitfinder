@@ -8,6 +8,7 @@ import { KitsListPage } from './admin/KitsListPage'
 import { LoginPage } from './admin/LoginPage'
 import { OffersPage } from './admin/OffersPage'
 import { CatalogPage } from './pages/CatalogPage'
+import { KitDetailPage } from './pages/KitDetailPage'
 
 const queryClient = new QueryClient()
 
@@ -18,6 +19,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<CatalogPage />} />
+            <Route path="/kits/:slug" element={<KitDetailPage />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<KitsListPage />} />

@@ -10,9 +10,17 @@ export function formatPrice(value: Money | null | undefined): string {
   return Number.isFinite(n) ? `${RUB.format(n)} ₽` : '—'
 }
 
-export function formatRange(pricing: KitPricing): string {
-  if (!pricing.complete) return 'неполный'
-  const min = formatPrice(pricing.price_min)
-  const max = formatPrice(pricing.price_max)
+export function formatMinMax(
+  priceMin: Money | null | undefined,
+  priceMax: Money | null | undefined,
+  complete: boolean,
+): string {
+  if (!complete) return 'неполный'
+  const min = formatPrice(priceMin)
+  const max = formatPrice(priceMax)
   return min === max ? min : `${min} – ${max}`
+}
+
+export function formatRange(pricing: KitPricing): string {
+  return formatMinMax(pricing.price_min, pricing.price_max, pricing.complete)
 }
