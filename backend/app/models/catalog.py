@@ -70,6 +70,11 @@ class Product(Base):
     __table_args__ = (
         # GIN по свободным атрибутам — фильтр flexible-позиций по attrs (contains)
         Index("ix_products_attrs_gin", "attrs", postgresql_using="gin"),
+        # GIN + pg_trgm по названию — поиск кита по товару состава (с опечатками)
+        Index(
+            "ix_products_name_trgm", "name",
+            postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -147,6 +152,13 @@ class Kit(Base):
     """Кит — заранее собранный набор снаряжения."""
 
     __tablename__ = "kits"
+    __table_args__ = (
+        # GIN + pg_trgm по названию — поиск китов (с опечатками)
+        Index(
+            "ix_kits_name_trgm", "name",
+            postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)

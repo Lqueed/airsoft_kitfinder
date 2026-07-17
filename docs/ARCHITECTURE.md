@@ -48,6 +48,13 @@ CHECK-констрейнт, без справочных таблиц.
 Принцип: парсеры **никогда не пишут в `products` напрямую** — только через
 `app/services/matching.py`. Вся нормализация живёт в одном месте.
 
+**Категорийные ключи.** Для категорий, где сортировка токенов раскалывает один
+товар (разный формат, язык, артикулы), используется структурный `match_key`.
+Реализовано для шаров (`bbs`): ключ `bbs:brand|weight|color|tracer` (бренд с
+алиасами, вес `0.NN`, цвет с дефолтом «белый», флаг трассера); распознанные
+атрибуты пишутся в `products.attrs`. Нераспознанное/прочие категории — общий
+токен-нормализатор (фолбэк).
+
 ## Парсеры
 
 - Контракт `app/parsers/base.py`: `ShopParser` (ABC; `code/name/base_url`;
@@ -93,11 +100,11 @@ CHECK-констрейнт, без справочных таблиц.
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/kits` | Каталог: `?role=&drive_type=&budget_min=&budget_max=&q=&page=`; у кита `price_min`/`price_max` |
-| GET | `/api/kits/{slug}` | Деталка: позиции; fixed → офферы по магазинам; flexible → варианты; вилка цены |
-| POST | `/api/wizard/recommend` | `{experience, role, budget}` → ранжированные киты (прозрачный скоринг, без ML) |
-| GET | `/api/search?q=` | Поиск китов: `ILIKE` + `pg_trgm` (опечатки) |
-| GET | `/api/meta` | Справочники: роли, типы приводов, категории |
+| GET | `/api/kits` | Каталог: `?role=&drive_type=&budget_min=&budget_max=&page=` (только published, бюджет = пересечение вилок); у кита `price_min`/`price_max`/`complete` |
+| GET | `/api/kits/{slug}` | Деталка: позиции; fixed → офферы по магазинам; flexible → варианты с офферами; вилка цены |
+| POST | `/api/wizard/recommend` | `{experience, role, budget}` → ранжированные киты (роль/уровень — бонус, бюджет — близость; без ML) |
+| GET | `/api/search?q=` | Поиск китов по названию/описанию и товарам состава: `pg_trgm` `word_similarity` (опечатки) |
+| GET | `/api/meta` | Справочники: роли, типы приводов, уровни, категории, магазины |
 
 ### Админские (`/api/admin`, за `Depends(require_admin)`)
 
@@ -108,13 +115,19 @@ CHECK-констрейнт, без справочных таблиц.
 | POST | `/kits/{id}/publish`, `/unpublish` | Публикация |
 | POST/PATCH/DELETE | `/kits/{id}/items`, `/items/{id}` | Позиции обоих типов |
 | GET | `/products?q=&category_id=` | Автокомплит товаров для привязки |
-| GET | `/offers?unmatched=true` | Несматченные офферы |
+| GET | `/offers?shop=&q=&status=&active=` | Каталог магазина: поиск по сырым офферам (`status`=all/unmatched/matched), `pg_trgm` по `raw_title` |
 | POST | `/offers/{id}/link` | Привязка оффера к product |
 | GET | `/kit-items/{id}/preview` | Предпросмотр вариантов flexible-позиции |
+| GET/PUT | `/kit-items/{id}/candidates` | Курация flexible-позиции: закрепить/исключить товар (сброс флагов удаляет) |
 
-Расчёт цены кита — один сервис `app/services/kit_pricing.py` (мин = сумма минимальных
-активных офферов обязательных позиций; для flexible — самый дешёвый подходящий вариант).
+Расчёт цены кита — один сервис `app/services/kit_pricing.py`: `price_min` = сумма
+минимальных активных офферов по **обязательным** позициям (для flexible — самый
+дешёвый подходящий вариант); `price_max` = по обязательным (самый дорогой вариант)
+плюс опциональные позиции. Неполный кит (обязательная позиция без цены) → `complete=false`.
 Используется каталогом, деталкой и визардом.
+
+**Поисковые индексы** (`pg_trgm`, GIN): `offers.raw_title` (каталог магазина),
+`products.name` и `kits.name` (публичный поиск); GIN по `products.attrs` (фильтр flexible).
 
 ## Фронтенд
 

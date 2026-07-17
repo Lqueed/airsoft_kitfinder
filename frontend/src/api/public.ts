@@ -1,7 +1,7 @@
 // API публичной витрины (без авторизации).
 
 import { apiFetch } from './client'
-import type { KitCatalog, KitDetail } from './types'
+import type { KitCard, KitCatalog, KitDetail } from './types'
 
 export interface CatalogFilters {
   role?: string | null
@@ -22,3 +22,15 @@ export const listKits = (filters: CatalogFilters = {}) => {
 }
 
 export const getKitDetail = (slug: string) => apiFetch<KitDetail>(`/kits/${slug}`)
+
+export interface WizardAnswers {
+  experience?: string | null
+  role?: string | null
+  budget?: number | null
+}
+
+export const recommend = (body: WizardAnswers) =>
+  apiFetch<KitCard[]>('/wizard/recommend', { method: 'POST', body: JSON.stringify(body) })
+
+export const searchKits = (q: string) =>
+  apiFetch<KitCard[]>(`/search?q=${encodeURIComponent(q)}`)

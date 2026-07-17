@@ -1,26 +1,27 @@
 import {
-  Badge,
-  Card,
+  Button,
   Container,
   Group,
   Loader,
   NumberInput,
   Select,
-  SimpleGrid,
-  Stack,
   Text,
+  TextInput,
   Title,
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getMeta } from '../api/admin'
 import { listKits } from '../api/public'
-import { formatMinMax } from '../admin/format'
+import { KitCardGrid } from './KitCardGrid'
 
 // Публичный каталог китов: фильтры (роль/привод/бюджет) хранятся в URL.
 export function CatalogPage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [query, setQuery] = useState('')
 
   const role = params.get('role') ?? undefined
   const driveType = params.get('drive_type') ?? undefined
@@ -52,9 +53,31 @@ export function CatalogPage() {
 
   return (
     <Container py="xl" size="lg">
-      <Title order={1} mb="md">
-        Каталог китов
-      </Title>
+      <Group justify="space-between" mb="md">
+        <Title order={1}>Каталог китов</Title>
+        <Button component={Link} to="/wizard" variant="light">
+          Подобрать кит →
+        </Button>
+      </Group>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (query.trim().length >= 2) navigate(`/search?q=${encodeURIComponent(query.trim())}`)
+        }}
+      >
+        <Group mb="lg">
+          <TextInput
+            placeholder="Поиск по названию или товару из состава…"
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            w={360}
+          />
+          <Button type="submit" disabled={query.trim().length < 2}>
+            Найти
+          </Button>
+        </Group>
+      </form>
 
       <Group align="flex-end" mb="lg">
         <Select
@@ -97,36 +120,7 @@ export function CatalogPage() {
       {data && data.items.length === 0 && (
         <Text c="dimmed">Под фильтры ничего не подошло.</Text>
       )}
-
-      {data && data.items.length > 0 && (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
-          {data.items.map((kit) => (
-            <Card
-              key={kit.id}
-              withBorder
-              padding="lg"
-              component={Link}
-              to={`/kits/${kit.slug}`}
-              style={{ textDecoration: 'none', color: 'inherit' }}
-            >
-              <Stack gap="xs">
-                <Text fw={600}>{kit.name}</Text>
-                <Group gap="xs">
-                  {kit.role && <Badge variant="light">{kit.role}</Badge>}
-                  {kit.drive_type && (
-                    <Badge variant="light" color="grape">
-                      {kit.drive_type}
-                    </Badge>
-                  )}
-                </Group>
-                <Text size="lg" fw={700}>
-                  {formatMinMax(kit.price_min, kit.price_max, kit.complete)}
-                </Text>
-              </Stack>
-            </Card>
-          ))}
-        </SimpleGrid>
-      )}
+      {data && data.items.length > 0 && <KitCardGrid kits={data.items} />}
     </Container>
   )
 }

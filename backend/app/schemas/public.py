@@ -34,6 +34,14 @@ class KitCatalogOut(BaseModel):
     page_size: int
 
 
+class WizardRequest(BaseModel):
+    """Ответы визарда для подбора кита (все поля опциональны)."""
+
+    experience: str | None = None
+    role: str | None = None
+    budget: Decimal | None = None
+
+
 class ProductBrief(BaseModel):
     """Товар для витрины (без служебных полей)."""
 

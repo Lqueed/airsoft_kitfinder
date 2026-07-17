@@ -9,6 +9,8 @@ import { LoginPage } from './admin/LoginPage'
 import { OffersPage } from './admin/OffersPage'
 import { CatalogPage } from './pages/CatalogPage'
 import { KitDetailPage } from './pages/KitDetailPage'
+import { SearchPage } from './pages/SearchPage'
+import { WizardPage } from './pages/WizardPage'
 
 const queryClient = new QueryClient()
 
@@ -19,6 +21,8 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<CatalogPage />} />
+            <Route path="/wizard" element={<WizardPage />} />
+            <Route path="/search" element={<SearchPage />} />
             <Route path="/kits/:slug" element={<KitDetailPage />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminLayout />}>
