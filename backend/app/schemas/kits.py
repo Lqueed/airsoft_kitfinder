@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.models.enums import DriveType, ExperienceLevel, KitItemType, KitStatus, Role
+from app.schemas.catalog import ProductOut
 
 # --- Позиции кита ----------------------------------------------------------
 
@@ -55,9 +56,28 @@ class KitItemOut(BaseModel):
     is_required: bool
     sort_order: int
     product_id: int | None = None
+    product: ProductOut | None = None  # выбранный товар fixed-позиции
     category_id: int | None = None
     max_price: Decimal | None = None
     attr_filters: dict[str, Any] | None = None
+
+
+class CandidateUpsert(BaseModel):
+    """Курация flexible-позиции: закрепить/исключить товар."""
+
+    product_id: int
+    is_pinned: bool = False
+    is_excluded: bool = False
+
+
+class CandidateOut(BaseModel):
+    """Закреплённый/исключённый товар flexible-позиции."""
+
+    id: int
+    product_id: int
+    product_name: str
+    is_pinned: bool
+    is_excluded: bool
 
 
 # --- Расчёт цены -----------------------------------------------------------

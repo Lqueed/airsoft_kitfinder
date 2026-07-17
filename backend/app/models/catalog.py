@@ -211,6 +211,8 @@ class KitItem(Base):
     candidates: Mapped[list["KitItemCandidate"]] = relationship(
         back_populates="kit_item", cascade="all, delete-orphan"
     )
+    # Выбранный товар fixed-позиции (только для чтения/отображения)
+    product: Mapped["Product | None"] = relationship(viewonly=True, lazy="selectin")
 
 
 class KitItemCandidate(Base):

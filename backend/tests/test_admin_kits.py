@@ -170,3 +170,76 @@ async def test_add_item_validation(
     kit_id = (await admin_client.post("/api/admin/kits", json={"name": "Валидация"})).json()["id"]
     resp = await admin_client.post(f"/api/admin/kits/{kit_id}/items", json=bad_body)
     assert resp.status_code == 422  # pydantic-валидация тела
+
+
+async def test_fixed_item_shows_selected_product(
+    admin_client: AsyncClient, session: AsyncSession
+) -> None:
+    shop = await _shop(session)
+    product = await _product(session, "Очки ESS")
+    await _offer(session, shop, Decimal(1000), product_id=product.id)
+    created = await admin_client.post("/api/admin/kits", json={"name": "Показ товара"})
+    kit_id = created.json()["id"]
+    body = (
+        await admin_client.post(
+            f"/api/admin/kits/{kit_id}/items",
+            json={"item_type": "fixed", "title": "Очки", "product_id": product.id},
+        )
+    ).json()
+    assert body["items"][0]["product"]["name"] == "Очки ESS"
+
+
+async def test_flexible_curation_pin_and_exclude(
+    admin_client: AsyncClient, session: AsyncSession
+) -> None:
+    shop = await _shop(session)
+    cat = await _category(session, "cur_cat")
+    p1 = await _product(session, "Шар в категории", cat)
+    p2 = await _product(session, "Шар вне категории")  # другая категория
+    await _offer(session, shop, Decimal(200), product_id=p1.id)
+    await _offer(session, shop, Decimal(300), product_id=p2.id)
+
+    kit_id = (await admin_client.post("/api/admin/kits", json={"name": "Курация"})).json()["id"]
+    item = (
+        await admin_client.post(
+            f"/api/admin/kits/{kit_id}/items",
+            json={"item_type": "flexible", "title": "Шары", "category_id": cat},
+        )
+    ).json()["items"][0]
+    item_id = item["id"]
+
+    def variant_ids(resp_json: dict) -> set[int]:
+        return {v["product_id"] for v in resp_json["variants"]}
+
+    base = await admin_client.get(f"/api/admin/kit-items/{item_id}/preview")
+    assert variant_ids(base.json()) == {p1.id}  # по критериям только p1
+
+    # Закрепляем p2 (вне категории) — попадает в варианты
+    pin = await admin_client.put(
+        f"/api/admin/kit-items/{item_id}/candidates",
+        json={"product_id": p2.id, "is_pinned": True},
+    )
+    assert pin.status_code == 200
+    after_pin = await admin_client.get(f"/api/admin/kit-items/{item_id}/preview")
+    assert variant_ids(after_pin.json()) == {p1.id, p2.id}
+
+    # Исключаем p1 — уходит из вариантов
+    await admin_client.put(
+        f"/api/admin/kit-items/{item_id}/candidates",
+        json={"product_id": p1.id, "is_excluded": True},
+    )
+    after_excl = await admin_client.get(f"/api/admin/kit-items/{item_id}/preview")
+    assert variant_ids(after_excl.json()) == {p2.id}
+
+    candidates = (await admin_client.get(f"/api/admin/kit-items/{item_id}/candidates")).json()
+    assert len(candidates) == 2
+
+    # Сброс курации p1 (оба флага false) удаляет запись → p1 снова в вариантах
+    await admin_client.put(
+        f"/api/admin/kit-items/{item_id}/candidates",
+        json={"product_id": p1.id, "is_pinned": False, "is_excluded": False},
+    )
+    reset = (await admin_client.get(f"/api/admin/kit-items/{item_id}/candidates")).json()
+    assert len(reset) == 1  # осталась только закреплённая p2
+    final = await admin_client.get(f"/api/admin/kit-items/{item_id}/preview")
+    assert variant_ids(final.json()) == {p1.id, p2.id}

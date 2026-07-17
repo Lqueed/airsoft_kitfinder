@@ -2,6 +2,7 @@
 
 import { apiFetch } from './client'
 import type {
+  Candidate,
   FlexiblePreview,
   Kit,
   KitItem,
@@ -83,6 +84,18 @@ export const deleteItem = (itemId: number) =>
 
 export const previewItem = (itemId: number) =>
   apiFetch<FlexiblePreview>(`/admin/kit-items/${itemId}/preview`)
+
+export const listCandidates = (itemId: number) =>
+  apiFetch<Candidate[]>(`/admin/kit-items/${itemId}/candidates`)
+
+export const upsertCandidate = (
+  itemId: number,
+  body: { product_id: number; is_pinned?: boolean; is_excluded?: boolean },
+) =>
+  apiFetch<Candidate[]>(`/admin/kit-items/${itemId}/candidates`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
 
 // --- Каталог (товары и офферы) ---------------------------------------------
 

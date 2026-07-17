@@ -61,9 +61,18 @@ export interface KitItem {
   is_required: boolean
   sort_order: number
   product_id?: number | null
+  product?: Product | null
   category_id?: number | null
   max_price?: Money | null
   attr_filters?: Record<string, unknown> | null
+}
+
+export interface Candidate {
+  id: number
+  product_id: number
+  product_name: string
+  is_pinned: boolean
+  is_excluded: boolean
 }
 
 export interface ItemPricing {

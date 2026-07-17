@@ -7,9 +7,11 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import require_admin
 from app.db import SessionDep
-from app.models.catalog import Kit, KitItem
+from app.models.catalog import Kit, KitItem, KitItemCandidate, Product
 from app.models.enums import KitStatus
 from app.schemas.kits import (
+    CandidateOut,
+    CandidateUpsert,
     FlexiblePreviewOut,
     FlexibleVariantOut,
     KitCreate,
@@ -224,3 +226,65 @@ async def preview_item(item_id: int, session: SessionDep) -> FlexiblePreviewOut:
         )
     out.sort(key=lambda v: (v.min_price is None, v.min_price or 0))
     return FlexiblePreviewOut(item_id=item.id, variants=out)
+
+
+async def _candidates_out(session: AsyncSession, item_id: int) -> list[CandidateOut]:
+    """Список закреплённых/исключённых товаров позиции с именами."""
+    rows = (
+        await session.execute(
+            select(KitItemCandidate, Product.name)
+            .join(Product, Product.id == KitItemCandidate.product_id)
+            .where(KitItemCandidate.kit_item_id == item_id)
+            .order_by(Product.name)
+        )
+    ).all()
+    return [
+        CandidateOut(
+            id=c.id,
+            product_id=c.product_id,
+            product_name=name,
+            is_pinned=c.is_pinned,
+            is_excluded=c.is_excluded,
+        )
+        for c, name in rows
+    ]
+
+
+@router.get("/kit-items/{item_id}/candidates", response_model=list[CandidateOut])
+async def list_candidates(item_id: int, session: SessionDep) -> list[CandidateOut]:
+    """Ручная курация flexible-позиции: закреплённые и исключённые товары."""
+    await _get_item(session, item_id)
+    return await _candidates_out(session, item_id)
+
+
+@router.put("/kit-items/{item_id}/candidates", response_model=list[CandidateOut])
+async def upsert_candidate(
+    item_id: int, body: CandidateUpsert, session: SessionDep
+) -> list[CandidateOut]:
+    """Закрепляет/исключает товар. Сброс обоих флагов удаляет запись курации."""
+    await _get_item(session, item_id)
+    if await session.get(Product, body.product_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Товар не найден")
+    existing = await session.scalar(
+        select(KitItemCandidate).where(
+            KitItemCandidate.kit_item_id == item_id,
+            KitItemCandidate.product_id == body.product_id,
+        )
+    )
+    if not body.is_pinned and not body.is_excluded:
+        if existing is not None:
+            await session.delete(existing)
+    elif existing is not None:
+        existing.is_pinned = body.is_pinned
+        existing.is_excluded = body.is_excluded
+    else:
+        session.add(
+            KitItemCandidate(
+                kit_item_id=item_id,
+                product_id=body.product_id,
+                is_pinned=body.is_pinned,
+                is_excluded=body.is_excluded,
+            )
+        )
+    await session.commit()
+    return await _candidates_out(session, item_id)

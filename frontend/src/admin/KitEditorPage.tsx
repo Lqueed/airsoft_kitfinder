@@ -32,14 +32,15 @@ import {
   getMeta,
   publishKit,
   unpublishKit,
+  updateItem,
   updateKit,
   type ItemFields,
   type KitFields,
 } from '../api/admin'
 import { ApiError } from '../api/client'
 import type { Kit, KitItemType, Meta } from '../api/types'
+import { CurationModal } from './CurationModal'
 import { formatPrice, formatRange } from './format'
-import { PreviewModal } from './PreviewModal'
 import { ProductPicker } from './ProductPicker'
 
 export function KitEditorPage() {
@@ -242,12 +243,28 @@ function ItemsSection({
   meta: Meta | undefined
   onChanged: (k: Kit) => void
 }) {
-  const [previewId, setPreviewId] = useState<number | null>(null)
+  const [curationId, setCurationId] = useState<number | null>(null)
+  const [editItem, setEditItem] = useState<Kit['items'][number] | null>(null)
+
+  const refetch = () => getKit(kit.id).then(onChanged)
 
   const remove = useMutation({
     mutationFn: (itemId: number) => deleteItem(itemId).then(() => getKit(kit.id)),
     onSuccess: onChanged,
   })
+
+  // Перемещение позиции: обмениваем sort_order с соседом по отображаемому порядку.
+  const move = useMutation({
+    mutationFn: async ({ index, dir }: { index: number; dir: -1 | 1 }) => {
+      const items = kit.items
+      const j = index + dir
+      await updateItem(items[index].id, { sort_order: j })
+      return updateItem(items[j].id, { sort_order: index })
+    },
+    onSuccess: onChanged,
+  })
+
+  const curationItem = kit.items.find((i) => i.id === curationId)
 
   return (
     <Paper withBorder p="md">
@@ -261,6 +278,7 @@ function ItemsSection({
         <Table>
           <Table.Thead>
             <Table.Tr>
+              <Table.Th w={80}>Порядок</Table.Th>
               <Table.Th>Позиция</Table.Th>
               <Table.Th>Тип</Table.Th>
               <Table.Th>Обяз.</Table.Th>
@@ -269,11 +287,38 @@ function ItemsSection({
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {kit.items.map((item) => {
+            {kit.items.map((item, index) => {
               const pricing = kit.pricing.items.find((p) => p.item_id === item.id)
               return (
                 <Table.Tr key={item.id}>
-                  <Table.Td>{item.title}</Table.Td>
+                  <Table.Td>
+                    <Group gap={2}>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        disabled={index === 0}
+                        onClick={() => move.mutate({ index, dir: -1 })}
+                      >
+                        ↑
+                      </ActionIcon>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        disabled={index === kit.items.length - 1}
+                        onClick={() => move.mutate({ index, dir: 1 })}
+                      >
+                        ↓
+                      </ActionIcon>
+                    </Group>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text>{item.title}</Text>
+                    {item.item_type === 'fixed' && (
+                      <Text size="xs" c={item.product ? 'dimmed' : 'red'}>
+                        {item.product ? item.product.name : 'товар не выбран'}
+                      </Text>
+                    )}
+                  </Table.Td>
                   <Table.Td>{item.item_type === 'fixed' ? 'фикс.' : 'гибкая'}</Table.Td>
                   <Table.Td>{item.is_required ? 'да' : 'нет'}</Table.Td>
                   <Table.Td>
@@ -286,10 +331,13 @@ function ItemsSection({
                   <Table.Td>
                     <Group gap="xs" justify="flex-end">
                       {item.item_type === 'flexible' && (
-                        <Button size="xs" variant="light" onClick={() => setPreviewId(item.id)}>
+                        <Button size="xs" variant="light" onClick={() => setCurationId(item.id)}>
                           Варианты ({pricing?.variant_count ?? 0})
                         </Button>
                       )}
+                      <Button size="xs" variant="subtle" onClick={() => setEditItem(item)}>
+                        Изменить
+                      </Button>
                       <ActionIcon
                         color="red"
                         variant="subtle"
@@ -309,10 +357,109 @@ function ItemsSection({
       <Divider my="md" />
       <AddItemForm kit={kit} meta={meta} onChanged={onChanged} />
 
-      <Modal opened={previewId != null} onClose={() => setPreviewId(null)} title="Варианты позиции" size="lg">
-        {previewId != null && <PreviewModal itemId={previewId} />}
+      <Modal
+        opened={curationId != null}
+        onClose={() => setCurationId(null)}
+        title="Варианты и курация позиции"
+        size="lg"
+      >
+        {curationId != null && (
+          <CurationModal
+            itemId={curationId}
+            categoryId={curationItem?.category_id}
+            onCurated={refetch}
+          />
+        )}
+      </Modal>
+
+      <Modal opened={editItem != null} onClose={() => setEditItem(null)} title="Изменить позицию">
+        {editItem && (
+          <EditItemForm
+            item={editItem}
+            meta={meta}
+            onSaved={(k) => {
+              onChanged(k)
+              setEditItem(null)
+            }}
+          />
+        )}
       </Modal>
     </Paper>
+  )
+}
+
+function EditItemForm({
+  item,
+  meta,
+  onSaved,
+}: {
+  item: Kit['items'][number]
+  meta: Meta | undefined
+  onSaved: (k: Kit) => void
+}) {
+  const [title, setTitle] = useState(item.title)
+  const [required, setRequired] = useState(item.is_required)
+  const [productId, setProductId] = useState<number | null>(item.product_id ?? null)
+  const [categoryId, setCategoryId] = useState<string | null>(
+    item.category_id != null ? String(item.category_id) : null,
+  )
+  const [maxPrice, setMaxPrice] = useState<number | string>(
+    item.max_price != null ? Number(item.max_price) : '',
+  )
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const body: ItemFields = { title, is_required: required }
+      if (item.item_type === 'fixed') {
+        if (productId != null) body.product_id = productId
+      } else {
+        if (categoryId) body.category_id = Number(categoryId)
+        body.max_price = maxPrice === '' ? null : Number(maxPrice)
+      }
+      return updateItem(item.id, body)
+    },
+    onSuccess: onSaved,
+  })
+
+  return (
+    <Stack>
+      <TextInput
+        label="Название позиции"
+        value={title}
+        onChange={(e) => setTitle(e.currentTarget.value)}
+      />
+      {item.item_type === 'fixed' ? (
+        <ProductPicker
+          label={`Товар${item.product ? ` (сейчас: ${item.product.name})` : ''}`}
+          onSelect={setProductId}
+        />
+      ) : (
+        <Group grow align="flex-end">
+          <Select
+            label="Категория"
+            data={(meta?.categories ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+            value={categoryId}
+            onChange={setCategoryId}
+            searchable
+          />
+          <NumberInput
+            label="Макс. цена варианта (₽)"
+            value={maxPrice}
+            onChange={setMaxPrice}
+            min={0}
+            allowNegative={false}
+          />
+        </Group>
+      )}
+      <Checkbox
+        label="Обязательная позиция"
+        checked={required}
+        onChange={(e) => setRequired(e.currentTarget.checked)}
+      />
+      <Button loading={mutation.isPending} disabled={!title.trim()} onClick={() => mutation.mutate()}>
+        Сохранить позицию
+      </Button>
+    </Stack>
   )
 }
 
@@ -342,7 +489,12 @@ function AddItemForm({
 
   const mutation = useMutation({
     mutationFn: () => {
-      const body: ItemFields = { item_type: type, title, is_required: required }
+      const body: ItemFields = {
+        item_type: type,
+        title,
+        is_required: required,
+        sort_order: kit.items.length, // новая позиция — в конец
+      }
       if (type === 'fixed') body.product_id = productId
       else {
         body.category_id = categoryId ? Number(categoryId) : null
