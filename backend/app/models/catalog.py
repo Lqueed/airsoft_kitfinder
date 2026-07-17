@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
@@ -66,6 +67,10 @@ class Product(Base):
     """Каноническая сущность товара (одна на модель, независимо от магазина)."""
 
     __tablename__ = "products"
+    __table_args__ = (
+        # GIN по свободным атрибутам — фильтр flexible-позиций по attrs (contains)
+        Index("ix_products_attrs_gin", "attrs", postgresql_using="gin"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(512))
@@ -74,7 +79,7 @@ class Product(Base):
     brand: Mapped[str | None] = mapped_column(String(255))
     # Нормализованное имя для авто-матчинга офферов между магазинами
     match_key: Mapped[str] = mapped_column(String(512), index=True)
-    # Свободные атрибуты (тип привода, материал и т.п.); GIN-индекс — в миграции
+    # Свободные атрибуты (тип привода, материал и т.п.); GIN-индекс — в __table_args__
     attrs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     image_url: Mapped[str | None] = mapped_column(String(1024))
     description: Mapped[str | None] = mapped_column(Text)
@@ -91,6 +96,13 @@ class Offer(Base):
     __tablename__ = "offers"
     __table_args__ = (
         UniqueConstraint("shop_id", "external_id", name="uq_offers_shop_external"),
+        # GIN + pg_trgm — быстрый ILIKE-поиск по сырому названию (каталог магазина)
+        Index(
+            "ix_offers_raw_title_trgm",
+            "raw_title",
+            postgresql_using="gin",
+            postgresql_ops={"raw_title": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

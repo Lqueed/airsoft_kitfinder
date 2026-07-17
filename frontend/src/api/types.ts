@@ -12,12 +12,21 @@ export interface Category {
   name: string
 }
 
+export interface ShopMeta {
+  id: number
+  code: string
+  name: string
+}
+
 export interface Meta {
   roles: string[]
   drive_types: string[]
   experience_levels: string[]
   categories: Category[]
+  shops: ShopMeta[]
 }
+
+export type OfferStatus = 'all' | 'unmatched' | 'matched'
 
 export interface Product {
   id: number

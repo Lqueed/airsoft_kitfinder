@@ -1,6 +1,6 @@
-"""Админ-API каталога: автокомплит товаров, несматченные офферы, ручная привязка."""
+"""Админ-API каталога: автокомплит товаров, поиск по каталогу магазина, привязка."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import require_admin
 from app.db import SessionDep
-from app.models.catalog import Offer, Product
+from app.models.catalog import Offer, Product, Shop
 from app.schemas.catalog import LinkRequest, OfferOut, ProductOut
 
 router = APIRouter(
@@ -35,18 +35,39 @@ async def search_products(
 @router.get("/offers", response_model=list[OfferOut])
 async def list_offers(
     session: SessionDep,
-    unmatched: bool = False,
+    shop: Annotated[str | None, Query(description="Код магазина")] = None,
+    q: Annotated[str | None, Query(description="Поиск по названию (ILIKE)")] = None,
+    status_filter: Annotated[
+        Literal["all", "unmatched", "matched"], Query(alias="status")
+    ] = "all",
+    active: Annotated[bool | None, Query(description="Только активные / снятые")] = None,
     limit: Annotated[int, Query(le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Offer]:
-    """Офферы магазинов; `unmatched=true` — только без привязки к товару."""
+    """Поиск по сырому каталогу магазина (независимо от матчинга).
+
+    Фильтры: магазин, подстрока названия, статус матчинга (all/unmatched/matched),
+    активность. Поиск по `raw_title` использует GIN + pg_trgm индекс.
+    """
     stmt = (
         select(Offer)
-        .order_by(Offer.first_seen_at.desc())
+        .order_by(Offer.raw_title)
         .limit(limit)
+        .offset(offset)
         .options(selectinload(Offer.shop))
     )
-    if unmatched:
+    if shop:
+        stmt = stmt.where(
+            Offer.shop_id == select(Shop.id).where(Shop.code == shop).scalar_subquery()
+        )
+    if q:
+        stmt = stmt.where(Offer.raw_title.ilike(f"%{q}%"))
+    if status_filter == "unmatched":
         stmt = stmt.where(Offer.product_id.is_(None))
+    elif status_filter == "matched":
+        stmt = stmt.where(Offer.product_id.is_not(None))
+    if active is not None:
+        stmt = stmt.where(Offer.is_active.is_(active))
     return list((await session.scalars(stmt)).all())
 
 

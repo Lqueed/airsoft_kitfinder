@@ -145,7 +145,7 @@ async def test_offers_unmatched_and_link(
     offer = await _offer(session, shop, Decimal(750), product_id=None)  # несматчен
     product = await _product(session, "Целевой товар")
 
-    unmatched = await admin_client.get("/api/admin/offers", params={"unmatched": "true"})
+    unmatched = await admin_client.get("/api/admin/offers", params={"status": "unmatched"})
     assert unmatched.status_code == 200
     assert any(o["id"] == offer.id for o in unmatched.json())
 
@@ -156,7 +156,7 @@ async def test_offers_unmatched_and_link(
     assert linked.json()["product_id"] == product.id
 
     # После привязки оффер больше не среди несматченных
-    after = await admin_client.get("/api/admin/offers", params={"unmatched": "true"})
+    after = await admin_client.get("/api/admin/offers", params={"status": "unmatched"})
     assert all(o["id"] != offer.id for o in after.json())
 
 

@@ -9,6 +9,7 @@ import type {
   Meta,
   Money,
   Offer,
+  OfferStatus,
   Product,
 } from './types'
 
@@ -92,8 +93,21 @@ export const searchProducts = (q: string, categoryId?: number | null) => {
   return apiFetch<Product[]>(`/admin/products?${params.toString()}`)
 }
 
-export const listOffers = (unmatched: boolean) =>
-  apiFetch<Offer[]>(`/admin/offers?unmatched=${unmatched}`)
+export interface OfferFilters {
+  shop?: string | null
+  q?: string
+  status?: OfferStatus
+  active?: boolean | null
+}
+
+export const listOffers = (filters: OfferFilters = {}) => {
+  const params = new URLSearchParams()
+  if (filters.shop) params.set('shop', filters.shop)
+  if (filters.q) params.set('q', filters.q)
+  if (filters.status) params.set('status', filters.status)
+  if (filters.active != null) params.set('active', String(filters.active))
+  return apiFetch<Offer[]>(`/admin/offers?${params.toString()}`)
+}
 
 export const linkOffer = (offerId: number, productId: number) =>
   apiFetch<Offer>(`/admin/offers/${offerId}/link`, {

@@ -31,7 +31,7 @@ export function AdminLayout() {
 
   const links = [
     { to: '/admin', label: 'Киты' },
-    { to: '/admin/offers', label: 'Несматченные офферы' },
+    { to: '/admin/offers', label: 'Каталог магазинов' },
   ]
 
   return (
