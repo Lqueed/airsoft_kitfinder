@@ -2,6 +2,11 @@ import { MantineProvider } from '@mantine/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
+import { AdminLayout } from './admin/AdminLayout'
+import { KitEditorPage } from './admin/KitEditorPage'
+import { KitsListPage } from './admin/KitsListPage'
+import { LoginPage } from './admin/LoginPage'
+import { OffersPage } from './admin/OffersPage'
 import { CatalogPage } from './pages/CatalogPage'
 
 const queryClient = new QueryClient()
@@ -13,6 +18,12 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<CatalogPage />} />
+            <Route path="/admin/login" element={<LoginPage />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<KitsListPage />} />
+              <Route path="kits/:id" element={<KitEditorPage />} />
+              <Route path="offers" element={<OffersPage />} />
+            </Route>
           </Routes>
         </BrowserRouter>
       </QueryClientProvider>

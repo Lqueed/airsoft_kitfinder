@@ -28,6 +28,12 @@ from app.models.enums import (
 )
 
 
+def _enum_values(enum_cls: type) -> list[str]:
+    """Хранить в БД значения enum (.value), а не имена членов — чтобы совпадало
+    с CHECK-констрейнтами (`'fixed'`/`'flexible'`) и валидацией Pydantic на чтении."""
+    return [member.value for member in enum_cls]
+
+
 class Shop(Base):
     """Магазин-источник. `code` совпадает с кодом парсера-плагина."""
 
@@ -134,15 +140,19 @@ class Kit(Base):
     slug: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
-    role: Mapped[Role | None] = mapped_column(Enum(Role, native_enum=False, length=32))
+    role: Mapped[Role | None] = mapped_column(
+        Enum(Role, native_enum=False, length=32, values_callable=_enum_values)
+    )
     drive_type: Mapped[DriveType | None] = mapped_column(
-        Enum(DriveType, native_enum=False, length=32)
+        Enum(DriveType, native_enum=False, length=32, values_callable=_enum_values)
     )
     experience_level: Mapped[ExperienceLevel | None] = mapped_column(
-        Enum(ExperienceLevel, native_enum=False, length=32)
+        Enum(ExperienceLevel, native_enum=False, length=32, values_callable=_enum_values)
     )
     status: Mapped[KitStatus] = mapped_column(
-        Enum(KitStatus, native_enum=False, length=32), default=KitStatus.DRAFT, index=True
+        Enum(KitStatus, native_enum=False, length=32, values_callable=_enum_values),
+        default=KitStatus.DRAFT,
+        index=True,
     )
     image_url: Mapped[str | None] = mapped_column(String(1024))
     created_at: Mapped[datetime] = mapped_column(
@@ -172,7 +182,9 @@ class KitItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kit_id: Mapped[int] = mapped_column(ForeignKey("kits.id", ondelete="CASCADE"), index=True)
     sort_order: Mapped[int] = mapped_column(default=0)
-    item_type: Mapped[KitItemType] = mapped_column(Enum(KitItemType, native_enum=False, length=32))
+    item_type: Mapped[KitItemType] = mapped_column(
+        Enum(KitItemType, native_enum=False, length=32, values_callable=_enum_values)
+    )
     title: Mapped[str] = mapped_column(String(255))
     is_required: Mapped[bool] = mapped_column(default=True)
 
