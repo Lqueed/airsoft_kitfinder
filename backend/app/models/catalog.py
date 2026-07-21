@@ -45,9 +45,7 @@ class Shop(Base):
     name: Mapped[str] = mapped_column(String(255))
     base_url: Mapped[str] = mapped_column(String(512))
     is_active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     offers: Mapped[list["Offer"]] = relationship(back_populates="shop")
 
@@ -72,8 +70,10 @@ class Product(Base):
         Index("ix_products_attrs_gin", "attrs", postgresql_using="gin"),
         # GIN + pg_trgm по названию — поиск кита по товару состава (с опечатками)
         Index(
-            "ix_products_name_trgm", "name",
-            postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"},
+            "ix_products_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
         ),
     )
 
@@ -88,9 +88,7 @@ class Product(Base):
     attrs: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     image_url: Mapped[str | None] = mapped_column(String(1024))
     description: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     offers: Mapped[list["Offer"]] = relationship(back_populates="product")
 
@@ -155,8 +153,10 @@ class Kit(Base):
     __table_args__ = (
         # GIN + pg_trgm по названию — поиск китов (с опечатками)
         Index(
-            "ix_kits_name_trgm", "name",
-            postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"},
+            "ix_kits_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
         ),
     )
 
@@ -179,9 +179,7 @@ class Kit(Base):
         index=True,
     )
     image_url: Mapped[str | None] = mapped_column(String(1024))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -189,6 +187,25 @@ class Kit(Base):
     items: Mapped[list["KitItem"]] = relationship(
         back_populates="kit", cascade="all, delete-orphan", order_by="KitItem.sort_order"
     )
+    images: Mapped[list["KitImage"]] = relationship(
+        back_populates="kit",
+        cascade="all, delete-orphan",
+        order_by="KitImage.sort_order, KitImage.id",
+    )
+
+
+class KitImage(Base):
+    """Загруженное фото кита (хранится в S3, здесь — object key и порядок)."""
+
+    __tablename__ = "kit_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kit_id: Mapped[int] = mapped_column(ForeignKey("kits.id", ondelete="CASCADE"), index=True)
+    object_key: Mapped[str] = mapped_column(String(512))  # ключ объекта в S3-бакете
+    sort_order: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    kit: Mapped["Kit"] = relationship(back_populates="images")
 
 
 class KitItem(Base):

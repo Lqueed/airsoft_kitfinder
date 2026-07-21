@@ -6,13 +6,16 @@ import {
   Card,
   Checkbox,
   Divider,
+  FileButton,
   Group,
+  Image,
   Loader,
   Modal,
   NumberInput,
   Paper,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Table,
   Text,
@@ -28,12 +31,15 @@ import {
   addItem,
   deleteItem,
   deleteKit,
+  deleteKitImage,
   getKit,
   getMeta,
   publishKit,
+  setKitCover,
   unpublishKit,
   updateItem,
   updateKit,
+  uploadKitImages,
   type ItemFields,
   type KitFields,
 } from '../api/admin'
@@ -78,6 +84,7 @@ export function KitEditorPage() {
       </Group>
 
       <KitFieldsForm kit={kit} meta={meta} onSaved={refresh} />
+      <KitImagesSection kit={kit} onChanged={refresh} />
       <PricingPanel kit={kit} onChanged={refresh} />
       <ItemsSection kit={kit} meta={meta} onChanged={refresh} />
 
@@ -176,6 +183,93 @@ function KitFieldsForm({
           Сохранить
         </Button>
       </Stack>
+    </Paper>
+  )
+}
+
+// --- Фото кита -------------------------------------------------------------
+
+const MAX_KIT_IMAGES = 10
+
+function KitImagesSection({ kit, onChanged }: { kit: Kit; onChanged: (k: Kit) => void }) {
+  const upload = useMutation({
+    mutationFn: (files: File[]) => uploadKitImages(kit.id, files),
+    onSuccess: onChanged,
+  })
+  const remove = useMutation({
+    mutationFn: (imageId: number) => deleteKitImage(imageId).then(() => getKit(kit.id)),
+    onSuccess: onChanged,
+  })
+  const cover = useMutation({
+    mutationFn: (imageId: number) => setKitCover(imageId),
+    onSuccess: onChanged,
+  })
+
+  const count = kit.images.length
+  const full = count >= MAX_KIT_IMAGES
+
+  return (
+    <Paper withBorder p="md">
+      <Group justify="space-between" mb="sm">
+        <Title order={4}>Фото ({count}/{MAX_KIT_IMAGES})</Title>
+        <FileButton
+          multiple
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(files) => files.length > 0 && upload.mutate(files)}
+        >
+          {(props) => (
+            <Button {...props} loading={upload.isPending} disabled={full}>
+              Загрузить фото
+            </Button>
+          )}
+        </FileButton>
+      </Group>
+
+      {count === 0 && <Text c="dimmed">Фото пока нет. Первое загруженное станет обложкой.</Text>}
+
+      {count > 0 && (
+        <SimpleGrid cols={{ base: 3, sm: 5 }} spacing="sm">
+          {kit.images.map((img) => (
+            <Card key={img.id} withBorder padding={4}>
+              <Card.Section pos="relative">
+                <Image src={img.url} h={110} fit="cover" alt="фото кита" />
+                {img.is_cover && (
+                  <Badge pos="absolute" top={4} left={4} color="green" size="sm">
+                    обложка
+                  </Badge>
+                )}
+              </Card.Section>
+              <Group justify="space-between" mt={4} gap={2} wrap="nowrap">
+                {img.is_cover ? (
+                  <span />
+                ) : (
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    onClick={() => cover.mutate(img.id)}
+                  >
+                    Обложка
+                  </Button>
+                )}
+                <ActionIcon
+                  color="red"
+                  variant="subtle"
+                  size="sm"
+                  onClick={() => remove.mutate(img.id)}
+                >
+                  ✕
+                </ActionIcon>
+              </Group>
+            </Card>
+          ))}
+        </SimpleGrid>
+      )}
+
+      {upload.isError && (
+        <Text c="red" size="sm" mt="xs">
+          Ошибка загрузки: проверьте тип (изображение), размер (≤5 МБ) и лимит {MAX_KIT_IMAGES}.
+        </Text>
+      )}
     </Paper>
   )
 }

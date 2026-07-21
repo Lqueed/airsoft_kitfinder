@@ -7,6 +7,7 @@ import { KitEditorPage } from './admin/KitEditorPage'
 import { KitsListPage } from './admin/KitsListPage'
 import { LoginPage } from './admin/LoginPage'
 import { OffersPage } from './admin/OffersPage'
+import { ProductsPage } from './admin/ProductsPage'
 import { CatalogPage } from './pages/CatalogPage'
 import { KitDetailPage } from './pages/KitDetailPage'
 import { SearchPage } from './pages/SearchPage'
@@ -28,6 +29,7 @@ function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<KitsListPage />} />
               <Route path="kits/:id" element={<KitEditorPage />} />
+              <Route path="products" element={<ProductsPage />} />
               <Route path="offers" element={<OffersPage />} />
             </Route>
           </Routes>

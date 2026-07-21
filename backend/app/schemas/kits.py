@@ -149,8 +149,17 @@ class KitListItemOut(BaseModel):
     pricing: KitPricingOut
 
 
+class KitImageOut(BaseModel):
+    """Фото кита: публичный URL, порядок, признак обложки."""
+
+    id: int
+    url: str
+    is_cover: bool
+    sort_order: int
+
+
 class KitOut(BaseModel):
-    """Кит с позициями и вилкой цены."""
+    """Кит с позициями, фото и вилкой цены."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -164,6 +173,7 @@ class KitOut(BaseModel):
     status: KitStatus
     image_url: str | None = None
     items: list[KitItemOut] = []
+    images: list[KitImageOut] = []
     pricing: KitPricingOut
 
 

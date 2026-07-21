@@ -34,9 +34,22 @@ _BRAND_ALIASES: dict[str, str] = {
 # Шумовые слова, не несущие модельной информации (убираем из match_key).
 _STOP_WORDS: frozenset[str] = frozenset(
     {
-        "страйкбольный", "страйкбольная", "страйкбольное", "страйкбольные",
-        "airsoft", "для", "и", "с", "в", "на", "шт", "новый", "новинка",
-        "привода", "приводов", "пистолетов",
+        "страйкбольный",
+        "страйкбольная",
+        "страйкбольное",
+        "страйкбольные",
+        "airsoft",
+        "для",
+        "и",
+        "с",
+        "в",
+        "на",
+        "шт",
+        "новый",
+        "новинка",
+        "привода",
+        "приводов",
+        "пистолетов",
     }
 )
 
@@ -78,8 +91,8 @@ _BBS_BRANDS: list[tuple[str, str]] = [
     ("top power", "toppower"),
     ("g&g", "gg"),
     ("exact", "exact"),
-    ("azot", "azot"),      # латинская A
-    ("аzot", "azot"),      # кириллическая А (как на mangoost)
+    ("azot", "azot"),  # латинская A
+    ("аzot", "azot"),  # кириллическая А (как на mangoost)
     ("азот", "azot"),
     ("bls", "bls"),
     ("vfc", "vfc"),
@@ -156,11 +169,38 @@ def bbs_match_key(title: str) -> tuple[str, dict[str, object]] | None:
 
 # Латинизация кириллицы для URL-слага товара.
 _TRANSLIT = {
-    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh",
-    "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n",
-    "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f",
-    "х": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y",
-    "ь": "", "э": "e", "ю": "yu", "я": "ya",
+    "а": "a",
+    "б": "b",
+    "в": "v",
+    "г": "g",
+    "д": "d",
+    "е": "e",
+    "ж": "zh",
+    "з": "z",
+    "и": "i",
+    "й": "y",
+    "к": "k",
+    "л": "l",
+    "м": "m",
+    "н": "n",
+    "о": "o",
+    "п": "p",
+    "р": "r",
+    "с": "s",
+    "т": "t",
+    "у": "u",
+    "ф": "f",
+    "х": "h",
+    "ц": "c",
+    "ч": "ch",
+    "ш": "sh",
+    "щ": "sch",
+    "ъ": "",
+    "ы": "y",
+    "ь": "",
+    "э": "e",
+    "ю": "yu",
+    "я": "ya",
 }
 
 
@@ -211,9 +251,7 @@ async def _category_map(session: AsyncSession) -> dict[str, int]:
     return {slug: cid for slug, cid in rows.all()}
 
 
-def build_match_key(
-    raw_title: str, category_slug: str | None
-) -> tuple[str, dict[str, object]]:
+def build_match_key(raw_title: str, category_slug: str | None) -> tuple[str, dict[str, object]]:
     """Ключ матчинга и структурные атрибуты товара по названию и категории.
 
     Для шаров (bbs) — структурный ключ (бренд+вес+цвет+тип); если он не собрался
@@ -252,6 +290,18 @@ async def match_offer(
         product.image_url = offer.image_url  # дозаполняем картинку из оффера
     offer.product_id = product.id
     return product, created
+
+
+async def create_product_from_offer(session: AsyncSession, offer: Offer) -> tuple[Product, bool]:
+    """Создаёт (или находит) канонический товар из оффера и привязывает оффер.
+
+    Тонкая обёртка над `match_offer` — соблюдает инвариант «products создаются
+    только через matching.py» и не дублирует генерацию slug/match_key. Если товар
+    с таким `match_key` уже есть, привязывает к нему (created=False), не плодя дубль.
+    Коммит — на вызывающей стороне (эндпоинте).
+    """
+    categories = await _category_map(session)
+    return await match_offer(session, offer, categories)
 
 
 async def match_unmatched(session: AsyncSession, shop_id: int | None = None) -> MatchReport:

@@ -16,7 +16,7 @@ router = APIRouter(
 )
 
 
-@router.get("/products", response_model=list[ProductOut])
+@router.get("/product-search", response_model=list[ProductOut])
 async def search_products(
     session: SessionDep,
     q: Annotated[str | None, Query(description="Подстрока названия")] = None,

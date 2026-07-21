@@ -12,10 +12,15 @@ export class ApiError extends Error {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Для FormData не выставляем Content-Type — браузер сам проставит multipart boundary.
+  const isForm = init?.body instanceof FormData
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
+    headers: {
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+      ...init?.headers,
+    },
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')

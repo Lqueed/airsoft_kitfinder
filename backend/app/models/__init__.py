@@ -3,6 +3,7 @@
 from app.models.catalog import (
     Category,
     Kit,
+    KitImage,
     KitItem,
     KitItemCandidate,
     Offer,
@@ -14,6 +15,7 @@ from app.models.catalog import (
 __all__ = [
     "Category",
     "Kit",
+    "KitImage",
     "KitItem",
     "KitItemCandidate",
     "Offer",

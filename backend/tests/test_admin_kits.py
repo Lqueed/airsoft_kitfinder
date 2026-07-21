@@ -128,13 +128,14 @@ async def test_flexible_preview_lists_variants(
 
 
 async def test_products_autocomplete(admin_client: AsyncClient, session: AsyncSession) -> None:
-    await _product(session, "Привод CYMA CM.028")
-    await _product(session, "Маска сетчатая")
+    # уникальный маркер, чтобы тест не цеплял реальные товары наполненной БД
+    await _product(session, "Привод ZZAUTOCMP модель")
+    await _product(session, "Маска ZZAUTOCMP сетка")
 
-    resp = await admin_client.get("/api/admin/products", params={"q": "cyma"})
+    resp = await admin_client.get("/api/admin/product-search", params={"q": "ZZAUTOCMP модель"})
     assert resp.status_code == 200
     names = [p["name"] for p in resp.json()]
-    assert any("CYMA" in n for n in names)
+    assert any("Привод ZZAUTOCMP" in n for n in names)
     assert all("Маска" not in n for n in names)
 
 

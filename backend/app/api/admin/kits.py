@@ -1,13 +1,16 @@
 """Админ-API китов: CRUD кита и позиций, публикация, предпросмотр flexible-позиции."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import require_admin
 from app.db import SessionDep
-from app.models.catalog import Kit, KitItem, KitItemCandidate, Product
+from app.models.catalog import Kit, KitImage, KitItem, KitItemCandidate, Product
 from app.models.enums import KitStatus
 from app.schemas.kits import (
     CandidateOut,
@@ -15,6 +18,7 @@ from app.schemas.kits import (
     FlexiblePreviewOut,
     FlexibleVariantOut,
     KitCreate,
+    KitImageOut,
     KitItemCreate,
     KitItemUpdate,
     KitListItemOut,
@@ -22,15 +26,23 @@ from app.schemas.kits import (
     KitPricingOut,
     KitUpdate,
 )
+from app.services import storage
 from app.services.kit_pricing import flexible_variants, price_kit, product_min_price
 from app.services.slugs import slugify
 
 router = APIRouter(prefix="/api/admin", tags=["admin-kits"], dependencies=[Depends(require_admin)])
 
+MAX_IMAGES = 10  # лимит фото на кит
+MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 МБ на файл
+
 
 async def _get_kit(session: AsyncSession, kit_id: int) -> Kit:
-    """Загружает кит с позициями или отдаёт 404."""
-    kit = await session.scalar(select(Kit).where(Kit.id == kit_id).options(selectinload(Kit.items)))
+    """Загружает кит с позициями и фото или отдаёт 404."""
+    kit = await session.scalar(
+        select(Kit)
+        .where(Kit.id == kit_id)
+        .options(selectinload(Kit.items), selectinload(Kit.images))
+    )
     if kit is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Кит не найден")
     return kit
@@ -55,8 +67,21 @@ async def _unique_slug(session: AsyncSession, name: str) -> str:
     return slug
 
 
+def _images_out(kit: Kit) -> list[KitImageOut]:
+    """Фото кита с публичными URL; обложка — та, чей URL совпадает с kit.image_url."""
+    return [
+        KitImageOut(
+            id=img.id,
+            url=storage.public_url(img.object_key),
+            is_cover=storage.public_url(img.object_key) == kit.image_url,
+            sort_order=img.sort_order,
+        )
+        for img in kit.images
+    ]
+
+
 async def _kit_out(session: AsyncSession, kit: Kit) -> KitOut:
-    """Собирает KitOut с посчитанной вилкой цены."""
+    """Собирает KitOut с посчитанной вилкой цены и фото."""
     pricing = await price_kit(session, list(kit.items))
     return KitOut(
         id=kit.id,
@@ -69,6 +94,7 @@ async def _kit_out(session: AsyncSession, kit: Kit) -> KitOut:
         status=kit.status,
         image_url=kit.image_url,
         items=kit.items,
+        images=_images_out(kit),
         pricing=KitPricingOut.model_validate(pricing),
     )
 
@@ -115,7 +141,7 @@ async def create_kit(body: KitCreate, session: SessionDep) -> KitOut:
     )
     session.add(kit)
     await session.flush()
-    await session.refresh(kit, attribute_names=["items"])
+    await session.refresh(kit, attribute_names=["items", "images"])
     await session.commit()
     return await _kit_out(session, kit)
 
@@ -288,3 +314,79 @@ async def upsert_candidate(
         )
     await session.commit()
     return await _candidates_out(session, item_id)
+
+
+# --- Фото кита -------------------------------------------------------------
+
+
+@router.post("/kits/{kit_id}/images", response_model=KitOut, status_code=status.HTTP_201_CREATED)
+async def upload_kit_images(
+    kit_id: int, session: SessionDep, files: Annotated[list[UploadFile], File()]
+) -> KitOut:
+    """Загружает фото кита в S3 (до 10 на кит). Первое фото становится обложкой."""
+    kit = await _get_kit(session, kit_id)
+    if len(kit.images) + len(files) > MAX_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Максимум {MAX_IMAGES} фото на кит (сейчас {len(kit.images)})",
+        )
+    # валидируем все файлы ДО загрузки, чтобы не оставить частично залитые
+    payloads: list[tuple[bytes, str]] = []
+    for f in files:
+        if not storage.is_allowed_type(f.content_type):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Недопустимый тип файла: {f.content_type}",
+            )
+        data = await f.read()
+        if len(data) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл больше 5 МБ")
+        payloads.append((data, f.content_type or "image/jpeg"))
+
+    max_order = max((img.sort_order for img in kit.images), default=-1)
+    first_key: str | None = None
+    for i, (data, content_type) in enumerate(payloads):
+        key = await run_in_threadpool(storage.upload_image, data, content_type)
+        session.add(KitImage(kit_id=kit_id, object_key=key, sort_order=max_order + 1 + i))
+        if first_key is None:
+            first_key = key
+    if not kit.image_url and first_key is not None:
+        kit.image_url = storage.public_url(first_key)  # первое фото → обложка
+    await session.commit()
+    session.expire_all()  # сбросить кеш коллекций — перечитать images свежими
+    return await _kit_out(session, await _get_kit(session, kit_id))
+
+
+@router.delete("/kit-images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_kit_image(image_id: int, session: SessionDep) -> Response:
+    """Удаляет фото кита (из S3 и БД). Если это была обложка — переназначает на следующее."""
+    image = await session.get(KitImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено")
+    kit = await session.get(Kit, image.kit_id)
+    was_cover = kit is not None and kit.image_url == storage.public_url(image.object_key)
+    await run_in_threadpool(storage.delete_object, image.object_key)
+    await session.delete(image)
+    await session.flush()
+    if was_cover and kit is not None:
+        nxt = await session.scalar(
+            select(KitImage)
+            .where(KitImage.kit_id == kit.id)
+            .order_by(KitImage.sort_order, KitImage.id)
+            .limit(1)
+        )
+        kit.image_url = storage.public_url(nxt.object_key) if nxt is not None else None
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/kit-images/{image_id}/cover", response_model=KitOut)
+async def set_kit_cover(image_id: int, session: SessionDep) -> KitOut:
+    """Делает фото обложкой кита (`kit.image_url` = публичный URL фото)."""
+    image = await session.get(KitImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Фото не найдено")
+    kit = await _get_kit(session, image.kit_id)
+    kit.image_url = storage.public_url(image.object_key)
+    await session.commit()
+    return await _kit_out(session, await _get_kit(session, image.kit_id))

@@ -1,6 +1,7 @@
 import {
   Anchor,
   Badge,
+  Button,
   Group,
   Loader,
   SegmentedControl,
@@ -14,7 +15,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
-import { getMeta, linkOffer, listOffers } from '../api/admin'
+import { createProductFromOffer, getMeta, linkOffer, listOffers } from '../api/admin'
 import type { OfferStatus } from '../api/types'
 import { formatPrice } from './format'
 import { ProductPicker } from './ProductPicker'
@@ -38,6 +39,11 @@ export function OffersPage() {
   const link = useMutation({
     mutationFn: ({ offerId, productId }: { offerId: number; productId: number }) =>
       linkOffer(offerId, productId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['offers'] }),
+  })
+
+  const createProduct = useMutation({
+    mutationFn: (offerId: number) => createProductFromOffer(offerId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['offers'] }),
   })
 
@@ -115,11 +121,23 @@ export function OffersPage() {
                     </Badge>
                   )}
                 </Table.Td>
-                <Table.Td w={300}>
-                  <ProductPicker
-                    onSelect={(productId) => link.mutate({ offerId: offer.id, productId })}
-                    placeholder={offer.product_id ? 'Перепривязать…' : 'Найти товар…'}
-                  />
+                <Table.Td w={320}>
+                  <Group gap="xs" wrap="nowrap" align="flex-end">
+                    <ProductPicker
+                      onSelect={(productId) => link.mutate({ offerId: offer.id, productId })}
+                      placeholder={offer.product_id ? 'Перепривязать…' : 'Найти товар…'}
+                    />
+                    {!offer.product_id && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={() => createProduct.mutate(offer.id)}
+                        loading={createProduct.isPending && createProduct.variables === offer.id}
+                      >
+                        Создать товар
+                      </Button>
+                    )}
+                  </Group>
                 </Table.Td>
               </Table.Tr>
             ))}

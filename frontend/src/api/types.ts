@@ -104,6 +104,13 @@ export interface KitListItem {
   pricing: KitPricing
 }
 
+export interface KitImage {
+  id: number
+  url: string
+  is_cover: boolean
+  sort_order: number
+}
+
 export interface Kit {
   id: number
   slug: string
@@ -115,6 +122,7 @@ export interface Kit {
   status: KitStatus
   image_url?: string | null
   items: KitItem[]
+  images: KitImage[]
   pricing: KitPricing
 }
 
@@ -198,4 +206,90 @@ export interface KitDetail {
   price_max?: Money | null
   complete: boolean
   items: KitDetailItem[]
+}
+
+// --- Админ-управление товарами ---------------------------------------------
+
+export type ProductSort = 'name' | 'created' | 'offers' | 'price_min'
+export type SortOrder = 'asc' | 'desc'
+
+export interface ProductRow {
+  id: number
+  name: string
+  slug: string
+  brand?: string | null
+  category_id?: number | null
+  category_name?: string | null
+  image_url?: string | null
+  offers_count: number
+  shops_count: number
+  price_min?: Money | null
+  price_max?: Money | null
+}
+
+export interface ProductCatalog {
+  items: ProductRow[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ProductOfferRow {
+  id: number
+  shop: ShopBrief
+  raw_title: string
+  raw_category?: string | null
+  price?: Money | null
+  in_stock: boolean
+  is_active: boolean
+  url: string
+}
+
+export interface ProductDetail {
+  id: number
+  name: string
+  slug: string
+  brand?: string | null
+  category_id?: number | null
+  category_name?: string | null
+  description?: string | null
+  image_url?: string | null
+  attrs: Record<string, unknown>
+  match_key: string
+  offers_count: number
+  shops_count: number
+  price_min?: Money | null
+  price_max?: Money | null
+  offers: ProductOfferRow[]
+}
+
+export interface ProductUpdate {
+  name?: string | null
+  brand?: string | null
+  category_id?: number | null
+  description?: string | null
+  image_url?: string | null
+  attrs?: Record<string, unknown> | null
+}
+
+export interface CreateFromOfferResult {
+  product: ProductDetail
+  created: boolean
+}
+
+export type BulkAction =
+  | { action: 'set_category'; product_ids: number[]; category_id: number | null }
+  | { action: 'set_brand'; product_ids: number[]; brand: string | null }
+  | { action: 'delete'; product_ids: number[]; unlink_offers?: boolean }
+
+export interface BulkItemResult {
+  product_id: number
+  ok: boolean
+  error?: string | null
+}
+
+export interface BulkResult {
+  processed: number
+  succeeded: number
+  results: BulkItemResult[]
 }

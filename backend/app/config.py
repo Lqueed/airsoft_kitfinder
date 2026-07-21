@@ -15,5 +15,14 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # True в проде (HTTPS)
     login_fail_delay_seconds: float = 1.0  # анти-брутфорс пауза при неверном пароле
 
+    # S3-совместимое хранилище фото китов. Бакет должен допускать public-read
+    # (или отдаваться через CDN) — фото раздаются по s3_public_base_url/<key>.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "ru-central1"
+    s3_public_base_url: str = ""  # напр. https://<bucket>.storage.yandexcloud.net
+
 
 settings = Settings()

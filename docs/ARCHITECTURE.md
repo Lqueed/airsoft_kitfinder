@@ -27,6 +27,7 @@ cron ─────────► uv run python -m app.cli parse ──► п�
 | `kits` | Киты | `slug`, `name`, `description`, `role`, `drive_type`, `experience_level`, `status` (`draft\|published`); бюджетная вилка **не денормализуется** — считается из offers |
 | `kit_items` | Позиции кита, оба типа в одной таблице | `item_type` (`fixed\|flexible`) + CHECK; fixed → `product_id`; flexible → `category_id`, `max_price`, `attr_filters` JSONB; `title`, `is_required`, `sort_order` |
 | `kit_item_candidates` | Ручная курация вариантов flexible-позиции | `kit_item_id`, `product_id`, `is_pinned`, `is_excluded` |
+| `kit_images` | Загруженные фото кита (файлы в S3) | `kit_id` (FK cascade), `object_key` (ключ в бакете), `sort_order`; до 10 на кит |
 
 Enum'ы (`role`, `drive_type`, `experience_level`, `status`, `item_type`) — Python-enum +
 CHECK-констрейнт, без справочных таблиц.
@@ -134,9 +135,16 @@ CHECK-констрейнт, без справочных таблиц.
 | GET/POST/PATCH/DELETE | `/kits`, `/kits/{id}` | CRUD китов (включая черновики) |
 | POST | `/kits/{id}/publish`, `/unpublish` | Публикация |
 | POST/PATCH/DELETE | `/kits/{id}/items`, `/items/{id}` | Позиции обоих типов |
-| GET | `/products?q=&category_id=` | Автокомплит товаров для привязки |
+| POST | `/kits/{id}/images` | Загрузка фото кита (multipart, до 10; первое → обложка) |
+| POST/DELETE | `/kit-images/{id}/cover`, `/kit-images/{id}` | Сделать обложкой / удалить фото (переназначает обложку) |
+| GET | `/product-search?q=&category_id=` | Автокомплит товаров для привязки (fixed-позиции, merge, ручной матчинг) |
+| GET | `/products?q=&category_id=&no_category=&multishop=&sort=&order=&page=&page_size=` | Список товаров с агрегатами (число офферов/магазинов, вилка цены), поиск/фильтры/сортировка/пагинация |
+| GET/PATCH/DELETE | `/products/{id}` | Карточка товара + офферы; правка полей (`match_key`/`slug` неизменны); удаление (409, если товар в fixed-ките; офферы отвязываются, курация чистится) |
+| POST | `/products/{target}/merge` | Слияние дублей: source-товары вливаются в цель (офферы/позиции/курация перевешиваются, дубли удаляются) |
+| POST | `/products/bulk` | Массовые операции (`set_category`/`set_brand`/`delete`) с per-item результатом (savepoint на элемент) |
 | GET | `/offers?shop=&q=&status=&active=` | Каталог магазина: поиск по сырым офферам (`status`=all/unmatched/matched), `pg_trgm` по `raw_title` |
-| POST | `/offers/{id}/link` | Привязка оффера к product |
+| POST | `/offers/{id}/link`, `/offers/{id}/unlink` | Привязка/отвязка оффера к product |
+| POST | `/offers/{id}/create-product` | Создать товар из оффера (find-or-create через matching.py) |
 | GET | `/kit-items/{id}/preview` | Предпросмотр вариантов flexible-позиции |
 | GET/PUT | `/kit-items/{id}/candidates` | Курация flexible-позиции: закрепить/исключить товар (сброс флагов удаляет) |
 
@@ -149,6 +157,22 @@ CHECK-констрейнт, без справочных таблиц.
 **Поисковые индексы** (`pg_trgm`, GIN): `offers.raw_title` (каталог магазина),
 `products.name` и `kits.name` (публичный поиск); GIN по `products.attrs` (фильтр flexible).
 
+**Управление товарами (`app/api/admin/products.py`).** Чистка результатов матчинга:
+объединение дублей (merge), правка полей, привязка/отвязка офферов, создание товара
+из оффера, массовые операции. Ключевые инварианты:
+- `match_key`/`slug` при ручной правке **не меняются** — это ключ дедупликации офферов;
+  ручное имя/бренд/категория не должны рассыпать матчинг. Создание товара из оффера
+  идёт только через `matching.create_product_from_offer` (find-or-create по `match_key`).
+- На `products.id` ссылаются 3 FK без `ondelete` (`offers`, `kit_items`,
+  `kit_item_candidates`), поэтому merge/delete транзакционно разбирают ссылки:
+  офферы и fixed-позиции перевешиваются массово, курация (`kit_item_candidates`
+  с UNIQUE `(kit_item_id, product_id)`) сводится в Python с OR-фолдингом флагов.
+  Удаление товара, который является целью **fixed**-позиции кита, запрещено (409).
+  Для чистки дублей предпочтителен merge (delete + повторный `rematch` «воскресит»
+  товар по тому же `match_key`).
+- Агрегаты списка (число офферов/магазинов, вилка цены) — один сгруппированный
+  подзапрос по `offers` с `FILTER`, без N+1 на ~22 тыс товаров.
+
 ## Фронтенд
 
 - **Библиотеки:** react-router, TanStack Query (весь серверный стейт; отдельный
@@ -158,9 +182,24 @@ CHECK-констрейнт, без справочных таблиц.
   (выбор вариантов flexible, липкая панель «Итого: от X до Y ₽»); `/wizard`
   (Mantine Stepper, 3 шага); `/admin/*` — логин, таблица китов, редактор кита
   (fixed через автокомплит, flexible через форму критериев + предпросмотр),
-  несматченные офферы. Гард — `GET /api/admin/me`, 401 → редирект на логин.
+  **страница «Товары»** (`/admin/products`: список с агрегатами, поиск/фильтры/сортировка,
+  чекбоксы + массовые действия, модалка карточки с правкой полей, офферами и ручным
+  матчингом/merge), каталог магазинов (офферы + привязка/создание товара). Гард —
+  `GET /api/admin/me`, 401 → редирект на логин.
 - Dev: Vite `server.proxy` `/api` → `localhost:8000`.
 - Ссылки «Купить»: `target="_blank" rel="noopener nofollow"`.
+
+## Хранилище фото (S3)
+
+Фото китов загружаются файлами в **S3-совместимое** хранилище (`app/services/storage.py`,
+boto3; sync-вызовы в async-эндпоинтах через `run_in_threadpool`). Загрузка идёт через бэк
+(multipart) — валидация типа/размера/лимита и запись в БД на сервере; в `kit_images` хранится
+только `object_key`. Отдача — по **стабильному публичному URL** `{S3_PUBLIC_BASE_URL}/{key}`
+(витрина читает `kit.image_url` как обычную ссылку; presigned истёк бы), поэтому бакет должен
+допускать public-read (или отдаваться через CDN). Обложка кита — `kit.image_url`: первое
+загруженное фото проставляется автоматически, любое можно назначить обложкой; при удалении
+обложки она переназначается на следующее фото. Настройки — `S3_*` в `config.py`/`.env`.
+В тестах S3-слой мокается (`monkeypatch`), реальное хранилище не требуется.
 
 ## Аутентификация админа
 
