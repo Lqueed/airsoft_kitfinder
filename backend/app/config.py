@@ -17,12 +17,13 @@ class Settings(BaseSettings):
 
     # S3-совместимое хранилище фото китов. Бакет должен допускать public-read
     # (или отдаваться через CDN) — фото раздаются по s3_public_base_url/<key>.
-    s3_endpoint_url: str = ""
-    s3_bucket: str = ""
-    s3_access_key: str = ""
-    s3_secret_key: str = ""
-    s3_region: str = "ru-central1"
-    s3_public_base_url: str = ""  # напр. https://<bucket>.storage.yandexcloud.net
+    # Дефолты — под локальный MinIO из docker-compose (в проде переопределить в .env).
+    s3_endpoint_url: str = "http://localhost:9000"
+    s3_bucket: str = "kit-images"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_region: str = "us-east-1"
+    s3_public_base_url: str = "http://localhost:9000/kit-images"
 
 
 settings = Settings()

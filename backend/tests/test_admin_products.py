@@ -138,7 +138,8 @@ async def test_list_pagination(admin_client: AsyncClient, session: AsyncSession)
     for i in range(5):
         await _product(session, f"ZZPag {i:02d}")
     r1 = await admin_client.get(
-        "/api/admin/products", params={"q": "ZZPag", "page": 1, "page_size": 2, "sort": "name"}
+        "/api/admin/products",
+        params={"q": "ZZPag", "page": 1, "page_size": 2, "sort": "name", "in_stock_only": "false"},
     )
     body = r1.json()
     assert body["total"] == 5
@@ -157,20 +158,44 @@ async def test_list_filters(admin_client: AsyncClient, session: AsyncSession) ->
     await _offer(session, s2, "m2", product_id=multishop.id)
 
     only_no_cat = await admin_client.get(
-        "/api/admin/products", params={"q": "ZZFlt", "no_category": "true"}
+        "/api/admin/products",
+        params={"q": "ZZFlt", "no_category": "true", "in_stock_only": "false"},
     )
     ids = {r["id"] for r in only_no_cat.json()["items"]}
     assert no_cat.id in ids and with_cat.id not in ids
 
     only_cat = await admin_client.get(
-        "/api/admin/products", params={"q": "ZZFlt", "category_id": cat}
+        "/api/admin/products",
+        params={"q": "ZZFlt", "category_id": cat, "in_stock_only": "false"},
     )
     assert {r["id"] for r in only_cat.json()["items"]} == {with_cat.id}
 
     only_multi = await admin_client.get(
-        "/api/admin/products", params={"q": "ZZFlt", "multishop": "true"}
+        "/api/admin/products",
+        params={"q": "ZZFlt", "multishop": "true", "in_stock_only": "false"},
     )
     assert {r["id"] for r in only_multi.json()["items"]} == {multishop.id}
+
+
+async def test_list_in_stock_only(admin_client: AsyncClient, session: AsyncSession) -> None:
+    in_stock = await _product(session, "ZZStock есть")
+    out_only = await _product(session, "ZZStock нет нигде")
+    s = await _shop(session, "stock")
+    await _offer(session, s, "живой", product_id=in_stock.id, in_stock=True)
+    await _offer(session, s, "нет в наличии", product_id=out_only.id, in_stock=False)
+
+    # по умолчанию (in_stock_only=true) — товар без наличия не показывается
+    default = await admin_client.get("/api/admin/products", params={"q": "ZZStock"})
+    ids_default = {r["id"] for r in default.json()["items"]}
+    assert in_stock.id in ids_default
+    assert out_only.id not in ids_default
+
+    # с in_stock_only=false — виден и товар без наличия
+    both = await admin_client.get(
+        "/api/admin/products", params={"q": "ZZStock", "in_stock_only": "false"}
+    )
+    ids_both = {r["id"] for r in both.json()["items"]}
+    assert {in_stock.id, out_only.id} <= ids_both
 
 
 async def test_list_sort_price_nulls_last(admin_client: AsyncClient, session: AsyncSession) -> None:
@@ -182,7 +207,8 @@ async def test_list_sort_price_nulls_last(admin_client: AsyncClient, session: As
     await _offer(session, s, "d", product_id=pricey.id, price=Decimal(500))
 
     resp = await admin_client.get(
-        "/api/admin/products", params={"q": "ZZSort", "sort": "price_min", "order": "asc"}
+        "/api/admin/products",
+        params={"q": "ZZSort", "sort": "price_min", "order": "asc", "in_stock_only": "false"},
     )
     ordered = [r["id"] for r in resp.json()["items"]]
     assert ordered.index(cheap.id) < ordered.index(pricey.id)

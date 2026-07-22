@@ -39,12 +39,14 @@ class ProductInUseError(Exception):
 def _offers_agg() -> Select:
     """Подзапрос агрегатов по офферам товара (счётчики — по активным, цена — по в наличии)."""
     active = Offer.is_active.is_(True)
-    priced = active & Offer.in_stock.is_(True) & Offer.price.is_not(None)
+    in_stock = active & Offer.in_stock.is_(True)
+    priced = in_stock & Offer.price.is_not(None)
     return (
         select(
             Offer.product_id.label("pid"),
             func.count().filter(active).label("offers_count"),
             func.count(distinct(Offer.shop_id)).filter(active).label("shops_count"),
+            func.count().filter(in_stock).label("in_stock_count"),
             func.min(Offer.price).filter(priced).label("price_min"),
             func.max(Offer.price).filter(priced).label("price_max"),
         )
@@ -123,6 +125,7 @@ async def list_products(
     category_id: Annotated[int | None, Query()] = None,
     no_category: Annotated[bool, Query(description="Только без категории")] = False,
     multishop: Annotated[bool, Query(description="Только в >1 магазине")] = False,
+    in_stock_only: Annotated[bool, Query(description="Только с офферами в наличии")] = True,
     sort: Annotated[Literal["name", "created", "offers", "price_min"], Query()] = "name",
     order: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: Annotated[int, Query(ge=1)] = 1,
@@ -141,6 +144,8 @@ async def list_products(
             stmt = stmt.where(Product.category_id == category_id)
         if multishop:
             stmt = stmt.where(func.coalesce(agg.c.shops_count, 0) > 1)
+        if in_stock_only:
+            stmt = stmt.where(func.coalesce(agg.c.in_stock_count, 0) > 0)
         return stmt
 
     total = await session.scalar(apply_filters(select(func.count(Product.id))))

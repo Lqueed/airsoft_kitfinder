@@ -35,6 +35,7 @@ export function ProductsPage() {
   const [categoryId, setCategoryId] = useState<string | null>(null)
   const [noCategory, setNoCategory] = useState(false)
   const [multishop, setMultishop] = useState(false)
+  const [inStockOnly, setInStockOnly] = useState(true)
   const [sort, setSort] = useState<ProductSort>('name')
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
@@ -49,6 +50,7 @@ export function ProductsPage() {
     category_id: noCategory ? null : categoryId ? Number(categoryId) : null,
     no_category: noCategory,
     multishop,
+    in_stock_only: inStockOnly,
     sort,
     order,
     page,
@@ -142,6 +144,14 @@ export function ProductsPage() {
           checked={multishop}
           onChange={(e) => {
             setMultishop(e.currentTarget.checked)
+            setPage(1)
+          }}
+        />
+        <Checkbox
+          label="Только в наличии"
+          checked={inStockOnly}
+          onChange={(e) => {
+            setInStockOnly(e.currentTarget.checked)
             setPage(1)
           }}
         />

@@ -92,6 +92,16 @@ export function ProductDetailModal({ productId, onClose }: Props) {
       {isLoading && <Loader />}
       {product && (
         <Stack>
+          {form.image_url && (
+            <Image
+              src={form.image_url}
+              w="100%"
+              mah={320}
+              fit="contain"
+              radius="sm"
+              alt={product.name}
+            />
+          )}
           <TextInput
             label="Название"
             value={form.name ?? ''}
@@ -112,24 +122,11 @@ export function ProductDetailModal({ productId, onClose }: Props) {
               onChange={(v) => setForm((f) => ({ ...f, category_id: v ? Number(v) : null }))}
             />
           </Group>
-          <Group align="flex-end" wrap="nowrap">
-            <TextInput
-              label="Картинка (URL)"
-              style={{ flex: 1 }}
-              value={form.image_url ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, image_url: e.currentTarget.value }))}
-            />
-            {form.image_url && (
-              <Image
-                src={form.image_url}
-                w={72}
-                h={72}
-                fit="contain"
-                radius="sm"
-                alt={product.name}
-              />
-            )}
-          </Group>
+          <TextInput
+            label="Картинка (URL)"
+            value={form.image_url ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, image_url: e.currentTarget.value }))}
+          />
           <Textarea
             label="Описание"
             autosize

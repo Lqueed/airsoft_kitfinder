@@ -135,6 +135,7 @@ export interface ProductFilters {
   category_id?: number | null
   no_category?: boolean
   multishop?: boolean
+  in_stock_only?: boolean
   sort?: ProductSort
   order?: SortOrder
   page?: number
@@ -147,6 +148,7 @@ export const listProducts = (filters: ProductFilters = {}) => {
   if (filters.category_id != null) params.set('category_id', String(filters.category_id))
   if (filters.no_category) params.set('no_category', 'true')
   if (filters.multishop) params.set('multishop', 'true')
+  if (filters.in_stock_only != null) params.set('in_stock_only', String(filters.in_stock_only))
   if (filters.sort) params.set('sort', filters.sort)
   if (filters.order) params.set('order', filters.order)
   if (filters.page) params.set('page', String(filters.page))

@@ -10,10 +10,11 @@ from functools import lru_cache
 
 import boto3
 from botocore.client import BaseClient
+from botocore.config import Config
 
 from app.config import settings
 
-_PREFIX = "kit-images"
+_PREFIX = "kits"  # папка-префикс внутри бакета (имя бакета — kit-images)
 # Допустимые типы фото → расширение файла в ключе.
 _EXT_BY_TYPE: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -32,6 +33,8 @@ def _client() -> BaseClient:
         aws_access_key_id=settings.s3_access_key or None,
         aws_secret_access_key=settings.s3_secret_key or None,
         region_name=settings.s3_region or None,
+        # path-style (bucket в пути) — совместимо с MinIO/Yandex, без virtual-host DNS
+        config=Config(s3={"addressing_style": "path"}),
     )
 
 

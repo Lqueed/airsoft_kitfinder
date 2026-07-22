@@ -67,6 +67,28 @@ async def product_min_price(session: AsyncSession, product_id: int) -> Decimal |
     )
 
 
+async def product_min_prices(
+    session: AsyncSession, product_ids: set[int]
+) -> dict[int, Decimal]:
+    """Мин. цены покупки сразу для набора товаров одним запросом (без N+1).
+
+    Возвращает {product_id: min_price} только для товаров с доступным оффером.
+    """
+    if not product_ids:
+        return {}
+    rows = await session.execute(
+        select(Offer.product_id, func.min(Offer.price))
+        .where(
+            Offer.product_id.in_(product_ids),
+            Offer.is_active.is_(True),
+            Offer.in_stock.is_(True),
+            Offer.price.is_not(None),
+        )
+        .group_by(Offer.product_id)
+    )
+    return {pid: price for pid, price in rows.all()}
+
+
 async def product_offers(session: AsyncSession, product_id: int) -> list[Offer]:
     """Активные офферы товара в наличии с ценой, от дешёвого к дорогому (с магазином)."""
     return list(
@@ -110,11 +132,11 @@ async def flexible_variants(session: AsyncSession, item: KitItem) -> list[Produc
         ).all()
         by_criteria.update(pinned_products)
 
+    candidates = [p for p in by_criteria if p.id not in excluded]
+    prices = await product_min_prices(session, {p.id for p in candidates})  # батч, без N+1
     variants: list[Product] = []
-    for product in by_criteria:
-        if product.id in excluded:
-            continue
-        price = await product_min_price(session, product.id)
+    for product in candidates:
+        price = prices.get(product.id)
         if price is None:
             continue  # нет доступного оффера — вариант недоступен
         if item.max_price is not None and price > item.max_price and product.id not in pinned:
@@ -154,8 +176,9 @@ async def price_item(session: AsyncSession, item: KitItem) -> ItemPricing:
         )
 
     variants = await flexible_variants(session, item)
-    raw_prices = [await product_min_price(session, v.id) for v in variants]
-    prices = [p for p in raw_prices if p is not None]
+    # цены вариантов — одним батч-запросом (flexible_variants уже отфильтровала по наличию цены)
+    price_map = await product_min_prices(session, {v.id for v in variants})
+    prices = [price_map[v.id] for v in variants if v.id in price_map]
     return ItemPricing(
         item_id=item.id,
         title=item.title,
