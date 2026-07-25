@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
-from app.parsers.base import ParsedOffer, ShopParser, parse_price
+from app.parsers.base import ParsedOffer, Section, ShopParser, parse_price
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -96,7 +96,9 @@ class AirsoftstoreParser(ShopParser):
     nav_timeout_ms: ClassVar[int] = 40000
     show_all: ClassVar[int] = 999999  # вся категория одной страницей
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
         """Через Playwright проходит челлендж, обходит leaf-категории каталога."""
         from playwright.async_api import async_playwright
 
@@ -111,10 +113,13 @@ class AirsoftstoreParser(ShopParser):
                 # дождаться прохождения челленджа: появится меню каталога
                 await page.wait_for_selector("a[href^='/oruzhie']", timeout=self.nav_timeout_ms)
                 for category_url in await self._collect_categories(page):
+                    if category_url in done_sections:  # уже обработан в прошлом прогоне
+                        continue
                     async for offer in self._iter_category(page, category_url):
                         if offer.external_id not in seen_offer_ids:
                             seen_offer_ids.add(offer.external_id)
                             yield offer
+                    yield Section(category_url)  # чекпоинт: раздел пройден
             finally:
                 await context.close()
                 await browser.close()

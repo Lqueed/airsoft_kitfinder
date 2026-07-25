@@ -21,7 +21,9 @@ class FakeParser(ShopParser):
     def __init__(self, offers: list[ParsedOffer]) -> None:
         self._offers = offers
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer]:
         for offer in self._offers:
             yield offer
 

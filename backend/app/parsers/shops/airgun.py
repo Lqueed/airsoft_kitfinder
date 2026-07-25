@@ -24,7 +24,7 @@ from urllib.parse import urljoin
 import httpx
 from selectolax.parser import HTMLParser
 
-from app.parsers.base import ParsedOffer, ShopParser, parse_price
+from app.parsers.base import ParsedOffer, Section, ShopParser, parse_price
 
 # Селекторы карточки товара в листинге — при смене вёрстки чинить здесь
 _CARD = "div.product"
@@ -125,7 +125,9 @@ class AirgunParser(ShopParser):
     # Каталог отдаётся одной страницей: ставим заведомо больший лимит, чем товаров.
     page_limit: ClassVar[int] = 100000
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
         """Обходит белый список категорий, каждую — одной страницей `?limit=`."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
@@ -133,6 +135,8 @@ class AirgunParser(ShopParser):
             headers=headers, timeout=40.0, follow_redirects=True
         ) as client:
             for path in self.category_paths:
+                if path in done_sections:  # уже обработан в прошлом прогоне
+                    continue
                 url = f"{urljoin(self.base_url, path)}?limit={self.page_limit}"
                 html = await self._fetch(client, url)
                 if html is None:
@@ -141,6 +145,7 @@ class AirgunParser(ShopParser):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
+                yield Section(path)  # чекпоинт: раздел пройден
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> str | None:
         await asyncio.sleep(self.request_delay)

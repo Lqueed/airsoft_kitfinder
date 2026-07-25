@@ -18,7 +18,7 @@ from urllib.parse import urljoin
 import httpx
 from selectolax.parser import HTMLParser
 
-from app.parsers.base import ParsedOffer, ShopParser, parse_price
+from app.parsers.base import ParsedOffer, Section, ShopParser, parse_price
 
 # Селекторы карточки товара в листинге — при смене вёрстки чинить здесь
 _CARD = "div.product-card"
@@ -104,7 +104,9 @@ class Pnevmat24Parser(ShopParser):
     request_delay: ClassVar[float] = 0.7
     max_pages_per_category: ClassVar[int] = 100
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
         """Обходит целевые категории снаряжения с пагинацией `?page=N`."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
@@ -112,11 +114,14 @@ class Pnevmat24Parser(ShopParser):
             headers=headers, timeout=25.0, follow_redirects=True
         ) as client:
             for path in self.category_paths:
+                if path in done_sections:  # уже обработан в прошлом прогоне
+                    continue
                 category_url = urljoin(self.base_url, path)
                 async for offer in self._iter_category(client, category_url):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
+                yield Section(path)  # чекпоинт: раздел пройден
 
     async def _iter_category(
         self, client: httpx.AsyncClient, category_url: str

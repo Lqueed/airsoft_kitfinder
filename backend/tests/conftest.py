@@ -9,6 +9,8 @@
 разных loop'ах). `admin_client` дополнительно залогинен админской cookie.
 """
 
+import asyncio
+import sys
 from collections.abc import AsyncIterator
 
 import pytest
@@ -22,6 +24,15 @@ from app.db import get_session
 from app.main import app
 
 ADMIN_PASSWORD = "test-pass"
+
+
+@pytest.fixture(scope="session")
+def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
+    """На Windows async-psycopg несовместим с дефолтным ProactorEventLoop —
+    используем SelectorEventLoop. На Linux/CI берётся стандартная политика."""
+    if sys.platform == "win32":
+        return asyncio.WindowsSelectorEventLoopPolicy()
+    return asyncio.get_event_loop_policy()
 
 
 @pytest_asyncio.fixture

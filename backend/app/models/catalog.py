@@ -132,6 +132,29 @@ class Offer(Base):
     product: Mapped["Product | None"] = relationship(back_populates="offers")
 
 
+class ParseProgress(Base):
+    """Прогресс парсинга магазина для возобновления прерванного прогона.
+
+    Одна строка на магазин. Пока `completed=false` — прошлый прогон незавершён:
+    следующий запуск пропустит разделы из `done_sections` и продолжит с прежним
+    `run_started_at` (чтобы деактивация несвежих офферов считалась корректно по
+    всему логическому прогону). `completed=true` → старт с нуля.
+    """
+
+    __tablename__ = "parse_progress"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shop_code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    run_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Идентификаторы уже обработанных разделов (URL категорий)
+    done_sections: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    parsed_count: Mapped[int] = mapped_column(default=0)  # накоплено офферов за прогон
+    completed: Mapped[bool] = mapped_column(default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PriceHistory(Base):
     """История цен оффера. Запись добавляется только при изменении цены/наличия."""
 

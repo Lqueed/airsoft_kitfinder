@@ -25,5 +25,18 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     s3_public_base_url: str = "http://localhost:9000/kit-images"
 
+    # LLM-экстракция атрибутов (GigaChat, доступен из РФ) для умного матчинга.
+    # Работает офлайн отдельным скриптом по крону, не в веб-процессе.
+    gigachat_auth_key: str = ""  # «Ключ авторизации» (Basic) из кабинета GigaChat
+    gigachat_scope: str = "GIGACHAT_API_PERS"  # PERS — бесплатный тариф для физлиц
+    gigachat_model: str = "GigaChat"
+    # У GigaChat российский корневой CA. По умолчанию проверку сертификата
+    # отключаем (verify=False) — для крон-скрипта приемлемо. Для строгого TLS
+    # укажи путь к russian_trusted_root_ca.pem в gigachat_ca_bundle.
+    gigachat_verify_ssl: bool = False
+    gigachat_ca_bundle: str = ""
+    llm_request_delay: float = 0.2  # пауза между вызовами API (только на промахе кэша)
+    llm_cache_path: str = ".llm_cache.json"  # файловый кэш экстракции (хеш названия → attrs)
+
 
 settings = Settings()

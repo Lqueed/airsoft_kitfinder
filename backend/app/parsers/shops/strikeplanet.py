@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 import httpx
 from selectolax.parser import HTMLParser
 
-from app.parsers.base import ParsedOffer, ShopParser, parse_price
+from app.parsers.base import ParsedOffer, Section, ShopParser, parse_price
 
 # Селекторы карточки товара — при смене вёрстки чинить здесь
 _CARD = ".products-card"
@@ -112,7 +112,9 @@ class StrikeplanetParser(ShopParser):
     request_delay: ClassVar[float] = 0.7  # пауза между запросами, сек
     max_pages_per_category: ClassVar[int] = 100  # предохранитель пагинации (крупные разделы)
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
         """Собирает разделы из мега-меню и обходит их с пагинацией (дедуп по id)."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
@@ -123,10 +125,13 @@ class StrikeplanetParser(ShopParser):
             if root_html is None:
                 return
             for category_url in parse_categories(root_html, self.base_url):
+                if category_url in done_sections:  # уже обработан в прошлом прогоне
+                    continue
                 async for offer in self._iter_category(client, category_url):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
+                yield Section(category_url)  # чекпоинт: раздел пройден
 
     async def _iter_category(
         self, client: httpx.AsyncClient, category_url: str

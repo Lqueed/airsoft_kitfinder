@@ -19,6 +19,9 @@ frontend/dist/
 .env.*
 !.env.example
 
+# Кэш LLM-экстракции (генерируемый артефакт спайка; переедет в БД — см. M10)
+.llm_cache.json
+
 # Claude Code (локальные настройки — per-user)
 .claude/settings.local.json
 .claude/settings.json

@@ -25,6 +25,19 @@ class ParsedOffer:
     image_url: str | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class Section:
+    """Маркер завершённого раздела каталога в потоке `iter_offers`.
+
+    Парсер отдаёт `Section(id)` после того, как ПОЛНОСТЬЮ выдал все офферы
+    раздела — это безопасная точка чекпоинта: ingest коммитит прогресс и
+    запоминает раздел, чтобы при обрыве возобновиться с него. `id` —
+    стабильный идентификатор раздела (обычно URL категории).
+    """
+
+    id: str
+
+
 class ShopParser(ABC):
     """Базовый плагин парсера. Один подкласс на магазин.
 
@@ -36,8 +49,15 @@ class ShopParser(ABC):
     base_url: ClassVar[str]
 
     @abstractmethod
-    def iter_offers(self) -> AsyncIterator[ParsedOffer]:
-        """Асинхронно отдаёт все предложения магазина (по всем категориям)."""
+    def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
+        """Асинхронно отдаёт предложения магазина (по всем категориям).
+
+        `done_sections` — идентификаторы разделов, уже обработанных в прерванном
+        прогоне: парсер их пропускает (возобновление). После полного обхода
+        раздела парсер отдаёт `Section(id)` — сигнал ingest закоммитить прогресс.
+        """
         raise NotImplementedError
 
 

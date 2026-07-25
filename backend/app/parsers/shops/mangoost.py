@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 import httpx
 from selectolax.parser import HTMLParser
 
-from app.parsers.base import ParsedOffer, ShopParser, parse_price
+from app.parsers.base import ParsedOffer, Section, ShopParser, parse_price
 
 # Селекторы карточки товара — при смене вёрстки чинить здесь
 _CARD = "form.product_brief_block"
@@ -85,7 +85,9 @@ class MangoostParser(ShopParser):
     )
     request_delay: ClassVar[float] = 0.7
 
-    async def iter_offers(self) -> AsyncIterator[ParsedOffer]:
+    async def iter_offers(
+        self, done_sections: frozenset[str] = frozenset()
+    ) -> AsyncIterator[ParsedOffer | Section]:
         """Собирает категории и обходит каждую одной страницей (суффикс /all/)."""
         headers = {"User-Agent": self.user_agent}
         seen_offer_ids: set[str] = set()
@@ -96,6 +98,8 @@ class MangoostParser(ShopParser):
             if home is None:
                 return
             for category_url in self._category_urls(home):
+                if category_url in done_sections:  # уже обработан в прошлом прогоне
+                    continue
                 html = await self._fetch(client, urljoin(category_url, "all/"))
                 if html is None:
                     continue
@@ -103,6 +107,7 @@ class MangoostParser(ShopParser):
                     if offer.external_id not in seen_offer_ids:
                         seen_offer_ids.add(offer.external_id)
                         yield offer
+                yield Section(category_url)  # чекпоинт: раздел пройден
 
     def _category_urls(self, html: str) -> list[str]:
         """Ссылки категорий (дедуп, порядок сохранён)."""

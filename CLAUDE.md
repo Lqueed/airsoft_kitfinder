@@ -13,6 +13,8 @@
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — модель данных, парсеры, API, фронт, auth;
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — этапы MVP и их статусы (**обновлять статус
   этапа после его завершения**).
+- [`docs/LLM_MATCHING.md`](docs/LLM_MATCHING.md) — умный матчинг через LLM (GigaChat):
+  дизайн, статус спайка, доработки парсеров (логи/коммит/резюм), как запускать.
 
 ## Общее
 

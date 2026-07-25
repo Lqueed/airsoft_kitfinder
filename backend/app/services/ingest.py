@@ -7,18 +7,24 @@
   FAILED и деактивация не выполняется (защита от смены вёрстки сайта).
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.catalog import Offer, PriceHistory, Shop
-from app.parsers.base import ParsedOffer, ShopParser
+from app.models.catalog import Offer, ParseProgress, PriceHistory, Shop
+from app.parsers.base import ParsedOffer, Section, ShopParser
+
+log = logging.getLogger("app.ingest")
 
 # Порог предохранителя: если распарсено меньше этой доли от прежнего числа
 # активных офферов — считаем прогон сломанным и не деактивируем офферы.
 SAFETY_RATIO = 0.5
+
+# Каждые столько офферов писать heartbeat-лог (видно, что прогон жив)
+_HEARTBEAT_EVERY = 200
 
 # Лимиты строковых колонок офферов (см. models/catalog.py)
 _MAX_TITLE = 512
@@ -86,58 +92,62 @@ async def ingest_shop(
     }
     prev_active = sum(1 for o in existing.values() if o.is_active)
 
+    # Прогресс/возобновление ведём только для полных прогонов (не smoke с --limit).
+    progress: ParseProgress | None = None
+    done_sections: frozenset[str] = frozenset()
     run_started_at = datetime.now(UTC)
+    if limit is None:
+        progress = await _load_or_reset_progress(session, parser.code)
+        run_started_at = progress.run_started_at  # тот же ts для деактивации по всему прогону
+        if progress.done_sections:  # возобновление прерванного прогона
+            done_sections = frozenset(progress.done_sections)
+            report.total_parsed = progress.parsed_count  # накоплено за прошлые сегменты
+            log.info(
+                "[%s] возобновление: пропускаю %d разделов, уже обработано %d офферов",
+                parser.code,
+                len(done_sections),
+                progress.parsed_count,
+            )
+
+    log.info("[%s] старт (активных офферов ранее: %d)", parser.code, prev_active)
     partial = False
 
-    async for parsed in parser.iter_offers():
+    async for item in parser.iter_offers(done_sections):
+        if isinstance(item, Section):
+            if progress is not None:
+                progress.done_sections = [*progress.done_sections, item.id]
+                progress.parsed_count = report.total_parsed
+                await session.commit()  # чекпоинт: раздел зафиксирован в БД
+                log.info(
+                    "[%s] раздел готов: %s (всего офферов: %d)",
+                    parser.code,
+                    item.id,
+                    report.total_parsed,
+                )
+            continue
+
         if limit is not None and report.total_parsed >= limit:
             partial = True
             break
         report.total_parsed += 1
-        _clamp_lengths(parsed)  # защита от переполнения строковых колонок
-        offer = existing.get(parsed.external_id)
-        if offer is None:
-            offer = Offer(
-                shop_id=shop.id,
-                external_id=parsed.external_id,
-                url=parsed.url,
-                raw_title=parsed.title,
-                raw_category=parsed.raw_category,
-                price=parsed.price,
-                in_stock=parsed.in_stock,
-                image_url=parsed.image_url,
-                is_active=True,
-                first_seen_at=run_started_at,
-                last_seen_at=run_started_at,
+        await _apply_offer(session, shop.id, existing, item, run_started_at, report)
+        if report.total_parsed % _HEARTBEAT_EVERY == 0:
+            if progress is not None:
+                progress.parsed_count = report.total_parsed
+            await session.commit()  # частый коммит: прогресс не теряется при обрыве
+            log.info(
+                "[%s] обработано %d офферов (раздел: %s)",
+                parser.code,
+                report.total_parsed,
+                item.raw_category,
             )
-            session.add(offer)
-            await session.flush()
-            existing[parsed.external_id] = offer
-            session.add(_history_row(offer, run_started_at))
-            report.created += 1
-            continue
-
-        price_changed = offer.price != parsed.price or offer.in_stock != parsed.in_stock
-        if not offer.is_active:
-            report.reactivated += 1
-        offer.url = parsed.url
-        offer.raw_title = parsed.title
-        offer.raw_category = parsed.raw_category
-        offer.price = parsed.price
-        offer.in_stock = parsed.in_stock
-        offer.image_url = parsed.image_url
-        offer.is_active = True
-        offer.last_seen_at = run_started_at
-        report.updated += 1
-        if price_changed:
-            session.add(_history_row(offer, run_started_at))
-            report.price_changes += 1
 
     await session.flush()
 
     if partial:
         report.message = f"частичный прогон (limit={limit}) — деактивация пропущена"
         await session.commit()
+        log.info("[%s] частичный прогон: %d офферов", parser.code, report.total_parsed)
         return report
 
     if _looks_broken(report.total_parsed, prev_active, safety_ratio):
@@ -146,7 +156,10 @@ async def ingest_shop(
             f"Распарсено {report.total_parsed} при {prev_active} активных ранее — "
             f"ниже порога {safety_ratio:.0%}; деактивация пропущена"
         )
+        if progress is not None:
+            progress.completed = True  # прогон окончен (все разделы), просто без деактивации
         await session.commit()
+        log.warning("[%s] прогон помечен FAILED: %s", parser.code, report.message)
         return report
 
     result = await session.execute(
@@ -159,8 +172,92 @@ async def ingest_shop(
         .values(is_active=False)
     )
     report.deactivated = result.rowcount or 0
+    if progress is not None:
+        progress.completed = True
+        progress.parsed_count = report.total_parsed
     await session.commit()
+    log.info(
+        "[%s] готово: %s (офферов %d, деактивировано %d)",
+        parser.code,
+        report.status,
+        report.total_parsed,
+        report.deactivated,
+    )
     return report
+
+
+async def _load_or_reset_progress(session: AsyncSession, shop_code: str) -> ParseProgress:
+    """Загружает прогресс магазина; завершённый/отсутствующий — сбрасывает в новый прогон."""
+    progress = await session.scalar(
+        select(ParseProgress).where(ParseProgress.shop_code == shop_code)
+    )
+    now = datetime.now(UTC)
+    if progress is None:
+        progress = ParseProgress(
+            shop_code=shop_code,
+            run_started_at=now,
+            done_sections=[],
+            parsed_count=0,
+            completed=False,
+        )
+        session.add(progress)
+        await session.flush()
+    elif progress.completed:  # прошлый прогон завершён — начинаем с нуля
+        progress.run_started_at = now
+        progress.done_sections = []
+        progress.parsed_count = 0
+        progress.completed = False
+        await session.flush()
+    return progress
+
+
+async def _apply_offer(
+    session: AsyncSession,
+    shop_id: int,
+    existing: dict[str, Offer],
+    parsed: ParsedOffer,
+    run_started_at: datetime,
+    report: IngestReport,
+) -> None:
+    """Upsert одного оффера + запись истории цен при изменении цены/наличия."""
+    _clamp_lengths(parsed)  # защита от переполнения строковых колонок
+    offer = existing.get(parsed.external_id)
+    if offer is None:
+        offer = Offer(
+            shop_id=shop_id,
+            external_id=parsed.external_id,
+            url=parsed.url,
+            raw_title=parsed.title,
+            raw_category=parsed.raw_category,
+            price=parsed.price,
+            in_stock=parsed.in_stock,
+            image_url=parsed.image_url,
+            is_active=True,
+            first_seen_at=run_started_at,
+            last_seen_at=run_started_at,
+        )
+        session.add(offer)
+        await session.flush()  # нужен offer.id для записи истории
+        existing[parsed.external_id] = offer
+        session.add(_history_row(offer, run_started_at))
+        report.created += 1
+        return
+
+    price_changed = offer.price != parsed.price or offer.in_stock != parsed.in_stock
+    if not offer.is_active:
+        report.reactivated += 1
+    offer.url = parsed.url
+    offer.raw_title = parsed.title
+    offer.raw_category = parsed.raw_category
+    offer.price = parsed.price
+    offer.in_stock = parsed.in_stock
+    offer.image_url = parsed.image_url
+    offer.is_active = True
+    offer.last_seen_at = run_started_at
+    report.updated += 1
+    if price_changed:
+        session.add(_history_row(offer, run_started_at))
+        report.price_changes += 1
 
 
 def _history_row(offer: Offer, recorded_at: datetime) -> PriceHistory:
