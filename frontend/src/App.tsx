@@ -10,6 +10,8 @@ import { OffersPage } from './admin/OffersPage'
 import { ProductsPage } from './admin/ProductsPage'
 import { CatalogPage } from './pages/CatalogPage'
 import { KitDetailPage } from './pages/KitDetailPage'
+import { ProductComparisonPage } from './pages/ProductComparisonPage'
+import { ProductSearchPage } from './pages/ProductSearchPage'
 import { SearchPage } from './pages/SearchPage'
 import { WizardPage } from './pages/WizardPage'
 
@@ -24,6 +26,8 @@ function App() {
             <Route path="/" element={<CatalogPage />} />
             <Route path="/wizard" element={<WizardPage />} />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/products" element={<ProductSearchPage />} />
+            <Route path="/products/:slug" element={<ProductComparisonPage />} />
             <Route path="/kits/:slug" element={<KitDetailPage />} />
             <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminLayout />}>

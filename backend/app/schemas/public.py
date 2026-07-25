@@ -102,3 +102,40 @@ class KitDetailOut(BaseModel):
     price_max: Decimal | None = None
     complete: bool
     items: list[KitDetailItemOut] = []
+
+
+# --- Умный поиск по товарам (сравнение цен, M9) -----------------------------
+
+
+class ProductSearchRow(BaseModel):
+    """Товар в результатах поиска: минимальная цена и число магазинов, где он есть."""
+
+    id: int
+    slug: str
+    name: str
+    brand: str | None = None
+    image_url: str | None = None
+    price_min: Decimal | None = None
+    shops_count: int = 0
+
+
+class ProductSearchOut(BaseModel):
+    """Страница результатов поиска товаров."""
+
+    items: list[ProductSearchRow]
+    total: int
+
+
+class ProductComparisonOut(BaseModel):
+    """Карточка товара со сравнением цен: все офферы по магазинам (дешёвые сверху)."""
+
+    id: int
+    slug: str
+    name: str
+    brand: str | None = None
+    image_url: str | None = None
+    description: str | None = None
+    price_min: Decimal | None = None
+    price_max: Decimal | None = None
+    shops_count: int = 0
+    offers: list[OfferView] = []

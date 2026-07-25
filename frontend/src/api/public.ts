@@ -1,7 +1,13 @@
 // API публичной витрины (без авторизации).
 
 import { apiFetch } from './client'
-import type { KitCard, KitCatalog, KitDetail } from './types'
+import type {
+  KitCard,
+  KitCatalog,
+  KitDetail,
+  ProductComparison,
+  ProductSearchResult,
+} from './types'
 
 export interface CatalogFilters {
   role?: string | null
@@ -34,3 +40,10 @@ export const recommend = (body: WizardAnswers) =>
 
 export const searchKits = (q: string) =>
   apiFetch<KitCard[]>(`/search?q=${encodeURIComponent(q)}`)
+
+// Умный поиск по отдельным товарам (сравнение цен, M9).
+export const searchProducts = (q: string) =>
+  apiFetch<ProductSearchResult>(`/products/search?q=${encodeURIComponent(q)}`)
+
+export const getProductComparison = (slug: string) =>
+  apiFetch<ProductComparison>(`/products/${slug}`)

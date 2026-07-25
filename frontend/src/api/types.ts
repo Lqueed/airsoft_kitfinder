@@ -208,6 +208,36 @@ export interface KitDetail {
   items: KitDetailItem[]
 }
 
+// --- Умный поиск по товарам (сравнение цен, M9) ----------------------------
+
+export interface ProductSearchRow {
+  id: number
+  slug: string
+  name: string
+  brand?: string | null
+  image_url?: string | null
+  price_min?: Money | null
+  shops_count: number
+}
+
+export interface ProductSearchResult {
+  items: ProductSearchRow[]
+  total: number
+}
+
+export interface ProductComparison {
+  id: number
+  slug: string
+  name: string
+  brand?: string | null
+  image_url?: string | null
+  description?: string | null
+  price_min?: Money | null
+  price_max?: Money | null
+  shops_count: number
+  offers: OfferView[]
+}
+
 // --- Админ-управление товарами ---------------------------------------------
 
 export type ProductSort = 'name' | 'created' | 'offers' | 'price_min'

@@ -55,9 +55,14 @@ export function CatalogPage() {
     <Container py="xl" size="lg">
       <Group justify="space-between" mb="md">
         <Title order={1}>Каталог китов</Title>
-        <Button component={Link} to="/wizard" variant="light">
-          Подобрать кит →
-        </Button>
+        <Group gap="xs">
+          <Button component={Link} to="/products" variant="subtle">
+            Сравнить цены на товары
+          </Button>
+          <Button component={Link} to="/wizard" variant="light">
+            Подобрать кит →
+          </Button>
+        </Group>
       </Group>
 
       <form
